@@ -1,0 +1,60 @@
+feature: 2026-05-28-team-rotation-profiles
+created: 2026-05-28
+
+steps:
+  - action: "编排骨架：建立 profile 名词对象、注册表和 runner，接入一个 stub profile"
+    exit_signal: "没有注册 profile 时 runner 明确返回未处理，注册 stub profile 时能返回 handled"
+    status: done
+  - action: "接入战斗回合：把默认 current.perform() 包成公共回合入口，combat_once() 和 AutoCombatTask.run() 都走它"
+    exit_signal: "无 profile 场景下现有回合行为等价，已有切人相关测试不受影响"
+    status: done
+  - action: "接入队伍匹配：load_chars() 成功后生成签名并匹配 registry"
+    exit_signal: "测试能用假角色队伍匹配到 profile，别名 label 不参与匹配"
+    status: done
+  - action: "安全动作与 fallback：补齐 context 默认动作、指定角色切换、profile fallback、禁用到本次战斗结束"
+    exit_signal: "profile 主动 fallback 会调用默认 perform；profile 运行错误会禁用本次战斗 profile 并记录原因"
+    status: done
+  - action: "爱达千 profile：按视频总轴图映射启动/循环顺序和三名角色的近似动作序列"
+    exit_signal: "测试能证明爱达千签名命中内置 profile，起手从千咲开始，并切到达妮娅"
+    status: done
+  - action: "测试覆盖：覆盖未命中、命中接管、主动 fallback、异常禁用、重新 load 后恢复匹配"
+    exit_signal: "新增测试和现有自动战斗 / 换人测试都通过"
+    status: done
+
+checks:
+  - item: "新增 TeamSignature / TeamRotationProfile / TeamRotationContext / TeamRotationResult / TeamRotationRegistry 名词对象"
+    source: 名词契约
+    status: pending
+  - item: "新增 AemeathDeniaChisaProfile，签名为 Aemeath / Denia / Chisa"
+    source: 名词契约
+    status: pending
+  - item: "公共战斗回合先尝试 profile，未处理时回退默认 current.perform()"
+    source: 编排骨架
+    status: pending
+  - item: "load_chars() 成功后刷新队伍签名并匹配 profile"
+    source: 编排骨架
+    status: pending
+  - item: "profile 主动 fallback 只回退本回合，profile 错误禁用到本次战斗结束"
+    source: 流程级约束
+    status: pending
+  - item: "注册表是新增 profile 的唯一挂载入口"
+    source: 挂载点
+    status: pending
+  - item: "不新增 YAML / JSON profile 解析入口"
+    source: 范围守护
+    status: pending
+  - item: "不新增 GUI 配置项或 ConfigOption 给普通用户编辑队伍轴"
+    source: 范围守护
+    status: pending
+  - item: "不新增可执行自由脚本字符串或动态执行用户输入的逻辑"
+    source: 范围守护
+    status: pending
+  - item: "爱达千 profile 第一回合从千咲起手，并显式切到达妮娅"
+    source: 验收场景
+    status: pending
+  - item: "没有注册 profile 的队伍调用默认 perform"
+    source: 验收场景
+    status: pending
+  - item: "profile 错误后禁用到本次战斗结束，后续回合不重复尝试坏 profile"
+    source: 验收场景
+    status: pending
