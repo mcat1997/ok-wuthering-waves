@@ -17,31 +17,29 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         ('Chisa', 'E', '_chisa_start_e'),
         ('Denia', 'E-R-2A', '_denia_e_r_2a'),
         ('Chisa', 'R-a3', '_chisa_r_a3'),
-        ('Denia', '2A', '_denia_2a'),
+        ('Denia', 'a3a4', '_denia_a3a4'),
         ('Chisa', 'a4a5-Q-enhancedE', '_chisa_a4a5_q_enhanced_e'),
         ('Denia', '2A-enhancedE-R2', '_denia_2a_enhanced_e_r2'),
         ('Chisa', 'tap-a2a3-finish', '_chisa_finish'),
-        ('Aemeath', 'Q-2A-R', '_aemeath_q_2a_r'),
+        ('Aemeath', 'Q-a3a4-R1', '_aemeath_q_a3a4_r1'),
         ('Aemeath', 'one-chain-heavy-enhancedE', '_aemeath_one_chain_heavy_enhanced_e'),
-        ('Aemeath', 'execute', '_aemeath_execute'),
-        ('Aemeath', '2A-enhancedE', '_aemeath_2a_enhanced_e'),
+        ('Aemeath', 'execute-a3a4-enhancedE', '_aemeath_execute_a3a4_enhanced_e'),
         ('Aemeath', 'fastHeavy-R2', '_aemeath_fast_heavy_r2_startup'),
         ('Aemeath', 'E-2A-E', '_aemeath_e_2a_e'),
     )
     cycle_plan = (
-        ('Chisa', 'E-A', '_chisa_e_a'),
+        ('Chisa', 'E-a3', '_chisa_e_a3'),
         ('Denia', 'E', '_denia_e'),
         ('Aemeath', 'a2a3-E', '_aemeath_a2a3_e'),
         ('Chisa', 'a4(a5)-(Q)', '_chisa_a4a5_q'),
-        ('Denia', 'Q-R-2A', '_denia_q_r_2a'),
+        ('Denia', 'R-2A', '_denia_r_2a'),
         ('Chisa', 'R-enhancedE', '_chisa_r_enhanced_e'),
         ('Aemeath', 'a2a3-E', '_aemeath_a2a3_e'),
         ('Chisa', 'tap-a2a3-finish', '_chisa_finish'),
         ('Denia', '2A-enhancedE-R2', '_denia_2a_enhanced_e_r2'),
-        ('Aemeath', 'Q-2A-R', '_aemeath_q_2a_r'),
-        ('Aemeath', 'enhancedE', '_aemeath_enhanced_e'),
-        ('Aemeath', 'execute-2A', '_aemeath_execute_2a'),
-        ('Aemeath', '3A-enhancedE', '_aemeath_3a_enhanced_e'),
+        ('Aemeath', 'Q-a3a4-R1', '_aemeath_q_a3a4_r1'),
+        ('Aemeath', 'one-chain-heavy-enhancedE', '_aemeath_one_chain_heavy_enhanced_e'),
+        ('Aemeath', 'execute-a3a4-enhancedE', '_aemeath_execute_a3a4_enhanced_e'),
         ('Aemeath', 'fastHeavy-R2', '_aemeath_fast_heavy_r2_cycle'),
         ('Aemeath', 'E-2A-E', '_aemeath_e_2a_e'),
     )
@@ -126,9 +124,35 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
             f'ready={ready} frames={max_frames} combat_elapsed={self._combat_elapsed(char):.2f}s')
         return ready
 
-    def _normal(self, char, duration, label, until_con_full=False):
+    def _supports_sleep_without_combat_check(self, char):
+        task = getattr(char, 'task', None)
+        return task is not None and hasattr(task, 'skip_combat_check') and hasattr(task, 'click')
+
+    def _with_task_skip_combat_check(self, char, action):
+        task = getattr(char, 'task', None)
+        if task is None or not hasattr(task, 'skip_combat_check'):
+            return action()
+
+        old_skip = task.skip_combat_check
+        task.skip_combat_check = True
+        try:
+            return action()
+        finally:
+            task.skip_combat_check = old_skip
+
+    def _normal_without_combat_check(self, char, duration, until_con_full=False, interval=0.1):
+        start = time.time()
+        while time.time() - start < duration:
+            if until_con_full and char.is_con_full():
+                return
+            char.task.click()
+            char.sleep(interval, check_combat=False)
+
+    def _normal(self, char, duration, label, until_con_full=False, check_combat=False):
         logger.info(f'team rotation normal: {self.name} {char.name} {label} duration={duration}')
-        char.continues_normal_attack(duration, until_con_full=until_con_full)
+        if not check_combat and self._supports_sleep_without_combat_check(char):
+            return self._normal_without_combat_check(char, duration, until_con_full=until_con_full)
+        return char.continues_normal_attack(duration, until_con_full=until_con_full)
 
     def _resonance(self, char, label, **kwargs):
         ret = char.click_resonance(**kwargs)
@@ -167,7 +191,7 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
     def _heavy(self, char, duration, label):
         logger.info(f'team rotation heavy: {self.name} {char.name} {label} duration={duration}')
         if hasattr(char, 'heavy_attack'):
-            char.heavy_attack(duration)
+            self._with_task_skip_combat_check(char, lambda: char.heavy_attack(duration))
         else:
             self._normal(char, duration, label)
 
@@ -219,7 +243,7 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
             logger.warning(
                 f'team rotation one-chain heavy unavailable: {self.name} no enhanced heavy window after R1')
             return False
-        ret = aemeath.handle_heavy()
+        ret = self._with_task_skip_combat_check(aemeath, aemeath.handle_heavy)
         logger.info(
             f'team rotation one-chain heavy: {self.name} ret={ret} '
             f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
@@ -266,9 +290,12 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         self._resonance(chisa, 'E', time_out=0.6)
         self._normal(chisa, 0.25, 'settle')
 
-    def _chisa_e_a(self, chisa):
+    def _chisa_e_a3(self, chisa):
         self._resonance(chisa, 'E', time_out=0.6)
-        self._normal(chisa, 0.25, 'A')
+        self._normal(chisa, 0.35, 'a3')
+
+    def _chisa_e_a(self, chisa):
+        self._chisa_e_a3(chisa)
 
     def _chisa_r_a3(self, chisa):
         if self._tap_liberation(chisa, 'R'):
@@ -290,7 +317,7 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         self._resonance(chisa, 'enhancedE', time_out=0.6)
 
     def _chisa_finish(self, chisa):
-        self._normal(chisa, 1.2, 'tap-a2a3-finish', until_con_full=True)
+        self._normal(chisa, 1.6, 'tap-a2a3-finish', until_con_full=True)
         if chisa.has_intro:
             chisa.record_support_buff()
         if chisa.is_forte_full():
@@ -310,6 +337,9 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
 
     def _denia_2a(self, denia):
         self._normal(denia, 0.25, '2A')
+
+    def _denia_a3a4(self, denia):
+        self._normal(denia, 0.5, 'a3a4')
 
     def _denia_r_2a(self, denia):
         self._tap_liberation(denia, 'R')
@@ -341,13 +371,16 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
             time_out=1.5,
         )
 
-    def _aemeath_q_2a_r(self, aemeath):
+    def _aemeath_q_a3a4_r1(self, aemeath):
         if aemeath.has_intro:
             aemeath.record_intro_liberation()
             self._normal(aemeath, 0.45, 'intro settle')
         self._echo(aemeath, 'Q', time_out=0)
-        self._normal(aemeath, 0.3, '2A')
+        self._normal(aemeath, 0.55, 'a3a4')
         self.aemeath_r1_casted = self._cast_aemeath_r1(aemeath)
+
+    def _aemeath_q_2a_r(self, aemeath):
+        self._aemeath_q_a3a4_r1(aemeath)
 
     def _aemeath_one_chain_heavy_enhanced_e(self, aemeath):
         heavy_done = self._perform_aemeath_one_chain_heavy(aemeath, self.aemeath_r1_casted)
@@ -396,6 +429,17 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         self._enhanced_e(
             aemeath,
             'enhancedE-after-3A',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.5,
+        )
+
+    def _aemeath_execute_a3a4_enhanced_e(self, aemeath):
+        self._normal(aemeath, 0.55, 'execute-a3a4')
+        self._enhanced_e(
+            aemeath,
+            'enhancedE-after-execute-a3a4',
             has_animation=True,
             send_click=True,
             animation_min_duration=0.5,

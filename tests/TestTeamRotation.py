@@ -240,30 +240,77 @@ class TestTeamRotation(unittest.TestCase):
     def test_aemeath_profile_uses_chart_step_counts(self):
         profile = AemeathDeniaChisaProfile()
 
-        self.assertEqual(len(profile.startup_plan), 13)
-        self.assertEqual(len(profile.cycle_plan), 15)
+        self.assertEqual(len(profile.startup_plan), 12)
+        self.assertEqual(len(profile.cycle_plan), 14)
         self.assertFalse(hasattr(profile, 'startup_aemeath_entry_seconds'))
-        self.assertEqual(profile.startup_plan[0][:2], ('Chisa', 'E'))
         self.assertEqual(
-            [step[1] for step in profile.startup_plan[3:]],
+            [step[:2] for step in profile.startup_plan],
             [
-                '2A',
-                'a4a5-Q-enhancedE',
-                '2A-enhancedE-R2',
-                'tap-a2a3-finish',
-                'Q-2A-R',
-                'one-chain-heavy-enhancedE',
-                'execute',
-                '2A-enhancedE',
-                'fastHeavy-R2',
-                'E-2A-E',
+                ('Chisa', 'E'),
+                ('Denia', 'E-R-2A'),
+                ('Chisa', 'R-a3'),
+                ('Denia', 'a3a4'),
+                ('Chisa', 'a4a5-Q-enhancedE'),
+                ('Denia', '2A-enhancedE-R2'),
+                ('Chisa', 'tap-a2a3-finish'),
+                ('Aemeath', 'Q-a3a4-R1'),
+                ('Aemeath', 'one-chain-heavy-enhancedE'),
+                ('Aemeath', 'execute-a3a4-enhancedE'),
+                ('Aemeath', 'fastHeavy-R2'),
+                ('Aemeath', 'E-2A-E'),
             ],
         )
-        self.assertEqual(profile.cycle_plan[4][:2], ('Denia', 'Q-R-2A'))
         self.assertEqual(
-            [step[1] for step in profile.cycle_plan[-6:]],
-            ['Q-2A-R', 'enhancedE', 'execute-2A', '3A-enhancedE', 'fastHeavy-R2', 'E-2A-E'],
+            [step[:2] for step in profile.cycle_plan],
+            [
+                ('Chisa', 'E-a3'),
+                ('Denia', 'E'),
+                ('Aemeath', 'a2a3-E'),
+                ('Chisa', 'a4(a5)-(Q)'),
+                ('Denia', 'R-2A'),
+                ('Chisa', 'R-enhancedE'),
+                ('Aemeath', 'a2a3-E'),
+                ('Chisa', 'tap-a2a3-finish'),
+                ('Denia', '2A-enhancedE-R2'),
+                ('Aemeath', 'Q-a3a4-R1'),
+                ('Aemeath', 'one-chain-heavy-enhancedE'),
+                ('Aemeath', 'execute-a3a4-enhancedE'),
+                ('Aemeath', 'fastHeavy-R2'),
+                ('Aemeath', 'E-2A-E'),
+            ],
         )
+
+    def test_profile_normal_attack_sleeps_without_combat_check(self):
+        class Task:
+            def __init__(self):
+                self.skip_combat_check = False
+                self.clicks = 0
+                self.skip_seen = []
+
+            def click(self):
+                self.clicks += 1
+
+            def sleep(self, sec):
+                self.skip_seen.append(self.skip_combat_check)
+
+        class Char(RecordingChar):
+            def __init__(self):
+                super().__init__('Chisa', 2, True)
+                self.task = Task()
+
+            def sleep(self, sec, check_combat=True):
+                if not check_combat:
+                    self.task.skip_combat_check = True
+                self.task.sleep(sec)
+                self.task.skip_combat_check = False
+
+        char = Char()
+
+        AemeathDeniaChisaProfile()._normal(char, 0.21, 'test')
+
+        self.assertGreaterEqual(char.task.clicks, 2)
+        self.assertTrue(char.task.skip_seen)
+        self.assertTrue(all(char.task.skip_seen))
 
     def test_chisa_r_enhanced_e_uses_nonblocking_liberation_tap(self):
         chisa = RecordingChar('Chisa', 2, True)
@@ -294,7 +341,8 @@ class TestTeamRotation(unittest.TestCase):
         class AemeathChar(RecordingChar):
             def __init__(self):
                 super().__init__('Aemeath', 1, True)
-                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1)
+                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1, skip_combat_check=False)
+                self.skip_seen = []
 
             def click_liberation(self, **kwargs):
                 self.actions.append(('liberation', self.name, kwargs))
@@ -308,6 +356,7 @@ class TestTeamRotation(unittest.TestCase):
                 return False
 
             def handle_heavy(self):
+                self.skip_seen.append(self.task.skip_combat_check)
                 self.actions.append(('handle_heavy', self.name))
                 return True
 
@@ -316,7 +365,7 @@ class TestTeamRotation(unittest.TestCase):
 
         aemeath = AemeathChar()
         profile = AemeathDeniaChisaProfile()
-        profile._aemeath_q_2a_r(aemeath)
+        profile._aemeath_q_a3a4_r1(aemeath)
         profile._aemeath_one_chain_heavy_enhanced_e(aemeath)
         actions = [action[0] for action in aemeath.actions]
 
@@ -328,13 +377,15 @@ class TestTeamRotation(unittest.TestCase):
         class AemeathChar(RecordingChar):
             def __init__(self):
                 super().__init__('Aemeath', 1, True)
-                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1)
+                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1, skip_combat_check=False)
+                self.skip_seen = []
 
             def lib2_available(self):
                 self.actions.append(('lib2_available', self.name))
                 return True
 
             def handle_heavy(self):
+                self.skip_seen.append(self.task.skip_combat_check)
                 self.actions.append(('handle_heavy', self.name))
                 return True
 
@@ -349,7 +400,7 @@ class TestTeamRotation(unittest.TestCase):
 
         aemeath = AemeathChar()
         profile = AemeathDeniaChisaProfile()
-        profile._aemeath_q_2a_r(aemeath)
+        profile._aemeath_q_a3a4_r1(aemeath)
         self.assertTrue(profile.aemeath_r1_casted)
         self.assertIn(('record_liberation', 'Aemeath', False), aemeath.actions)
 
@@ -358,6 +409,8 @@ class TestTeamRotation(unittest.TestCase):
 
         self.assertEqual(actions.count('send_liberation'), 1)
         self.assertIn('handle_heavy', actions)
+        self.assertEqual(aemeath.skip_seen, [True])
+        self.assertFalse(aemeath.task.skip_combat_check)
         self.assertIn('resonance', actions)
         self.assertFalse(profile.aemeath_r1_casted)
 
