@@ -57,7 +57,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         while self.in_combat():
             ret = True
             try:
-                self.get_current_char().perform()
+                self.perform_current_turn()
             except CharDeadException:
                 self.log_error(f'Characters dead', notify=True)
                 break
