@@ -36,11 +36,15 @@ Follow-up live logs showed the profile was now staying active, but the embedded 
 
 The chart/video pass exposed two more timing observations: Aemeath should naturally enter the startup burst at about 11s, and the startup R2 should naturally land at about 18s. These timings are validation signals, not action triggers. A follow-up correction removed the combat-elapsed waits from the profile; the profile now advances only by chart actions and runtime states. Aemeath R1 is sent as a liberation key action and the stored 1-chain enhanced heavy is only consumed if the enhanced-heavy window appears afterward. Aemeath R2 is driven by the `lib2_available()` state and then sends the liberation key directly, avoiding the older `Aemeath.lib()` path that could re-check a flickering state and return false after the R2 state had already been detected. The logs distinguish this with `team rotation one-chain heavy preserved`, `team rotation one-chain heavy`, and `team rotation aemeath R2`.
 
+Follow-up live logs and a direct Chrome video check against `BV1aDGe6JEwT` showed the embedded Aemeath / Denia / Chisa axis still diverged from the visible chart. Startup should use `2A -> a4a5-Q-enhancedE -> 2A-enhancedE-R2 -> tap-a2a3-finish -> Q-2A-R -> one-chain-heavy-enhancedE -> execute -> 2A-enhancedE -> fastHeavy-R2 -> E-2A-E`; the previous profile used Denia `a3a4`, moved Chisa enhancedE to the wrong step, and packed all Aemeath actions into one burst. Cycle should use Denia `Q-R-2A` and split Aemeath into `Q-2A-R -> enhancedE -> execute-2A -> 3A-enhancedE -> fastHeavy-R2 -> E-2A-E`. The profile now follows those visible chart labels as separate action steps, so an early `lib2_available()` state only skips the R1 slot and no longer aborts the later R2 and E-2A-E slots.
+
 ## Verification
 
 - `.\.venv\Scripts\python.exe -m unittest tests.TestTeamRotation -v` passed.
 - `.\.venv\Scripts\python.exe -m unittest tests.TestChar -v` passed.
 - `.\.venv\Scripts\python.exe -m unittest tests.TestCombatCheck -v` passed.
 - `git diff --check` reported only CRLF normalization warnings.
+- `python -m unittest tests.TestTeamRotation -v` passed after the follow-up axis correction.
+- `python -m unittest -v` and `python -m unittest discover -v` both reported `NO TESTS RAN` in this repository layout; targeted module execution is the useful check here.
 
 Running `tests.TestChar tests.TestCombatCheck` in the same process fails after `TestChar` tears down the shared ok executor, causing `TestCombatCheck.set_image()` to raise `FinishedException`. Running the two classes independently passes.

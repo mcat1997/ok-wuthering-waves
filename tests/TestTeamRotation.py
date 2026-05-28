@@ -240,13 +240,30 @@ class TestTeamRotation(unittest.TestCase):
     def test_aemeath_profile_uses_chart_step_counts(self):
         profile = AemeathDeniaChisaProfile()
 
-        self.assertEqual(len(profile.startup_plan), 8)
-        self.assertEqual(len(profile.cycle_plan), 10)
+        self.assertEqual(len(profile.startup_plan), 13)
+        self.assertEqual(len(profile.cycle_plan), 15)
         self.assertFalse(hasattr(profile, 'startup_aemeath_entry_seconds'))
         self.assertEqual(profile.startup_plan[0][:2], ('Chisa', 'E'))
-        self.assertEqual(profile.startup_plan[-1][0], 'Aemeath')
-        self.assertEqual(profile.startup_plan[-1][2], '_aemeath_startup_burst')
-        self.assertEqual(profile.cycle_plan[-1][2], '_aemeath_cycle_burst')
+        self.assertEqual(
+            [step[1] for step in profile.startup_plan[3:]],
+            [
+                '2A',
+                'a4a5-Q-enhancedE',
+                '2A-enhancedE-R2',
+                'tap-a2a3-finish',
+                'Q-2A-R',
+                'one-chain-heavy-enhancedE',
+                'execute',
+                '2A-enhancedE',
+                'fastHeavy-R2',
+                'E-2A-E',
+            ],
+        )
+        self.assertEqual(profile.cycle_plan[4][:2], ('Denia', 'Q-R-2A'))
+        self.assertEqual(
+            [step[1] for step in profile.cycle_plan[-6:]],
+            ['Q-2A-R', 'enhancedE', 'execute-2A', '3A-enhancedE', 'fastHeavy-R2', 'E-2A-E'],
+        )
 
     def test_aemeath_burst_preserves_one_chain_heavy_when_r1_fails(self):
         class AemeathChar(RecordingChar):
@@ -273,12 +290,47 @@ class TestTeamRotation(unittest.TestCase):
                 return True
 
         aemeath = AemeathChar()
-        AemeathDeniaChisaProfile()._aemeath_burst(aemeath)
+        profile = AemeathDeniaChisaProfile()
+        profile._aemeath_q_2a_r(aemeath)
+        profile._aemeath_one_chain_heavy_enhanced_e(aemeath)
         actions = [action[0] for action in aemeath.actions]
 
         self.assertNotIn('send_liberation', actions)
         self.assertNotIn('handle_heavy', actions)
         self.assertNotIn('heavy', actions)
+
+    def test_aemeath_skips_r1_when_r2_ready_but_still_casts_r2(self):
+        class AemeathChar(RecordingChar):
+            def __init__(self):
+                super().__init__('Aemeath', 1, True)
+                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1)
+
+            def lib2_available(self):
+                self.actions.append(('lib2_available', self.name))
+                return not any(action[0] == 'send_liberation' for action in self.actions)
+
+            def handle_heavy(self):
+                self.actions.append(('handle_heavy', self.name))
+                return True
+
+            def record_liberation(self, is_lib2):
+                self.actions.append(('record_liberation', self.name, is_lib2))
+
+            def f_break(self):
+                self.actions.append(('f_break', self.name))
+
+        aemeath = AemeathChar()
+        profile = AemeathDeniaChisaProfile()
+        profile._aemeath_q_2a_r(aemeath)
+        self.assertFalse(profile.aemeath_r1_casted)
+        self.assertNotIn('send_liberation', [action[0] for action in aemeath.actions])
+
+        profile._aemeath_fast_heavy_r2_cycle(aemeath)
+        actions = [action[0] for action in aemeath.actions]
+
+        self.assertEqual(actions.count('send_liberation'), 1)
+        self.assertIn('handle_heavy', actions)
+        self.assertIn(('record_liberation', 'Aemeath', True), aemeath.actions)
 
     def test_aemeath_r2_uses_detected_r2_state_directly(self):
         class AemeathChar(RecordingChar):
