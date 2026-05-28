@@ -2,9 +2,6 @@ name: Codex Windows Build
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - codex/windows-build-aemeath-denia-chisa
 
 permissions:
   contents: read

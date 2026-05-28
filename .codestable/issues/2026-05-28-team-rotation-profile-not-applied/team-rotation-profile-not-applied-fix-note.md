@@ -38,6 +38,10 @@ The chart/video pass exposed two more timing observations: Aemeath should natura
 
 Follow-up live logs and a direct Chrome video check against `BV1aDGe6JEwT` showed the embedded Aemeath / Denia / Chisa axis still diverged from the visible chart. Startup should use `2A -> a4a5-Q-enhancedE -> 2A-enhancedE-R2 -> tap-a2a3-finish -> Q-2A-R -> one-chain-heavy-enhancedE -> execute -> 2A-enhancedE -> fastHeavy-R2 -> E-2A-E`; the previous profile used Denia `a3a4`, moved Chisa enhancedE to the wrong step, and packed all Aemeath actions into one burst. Cycle should use Denia `Q-R-2A` and split Aemeath into `Q-2A-R -> enhancedE -> execute-2A -> 3A-enhancedE -> fastHeavy-R2 -> E-2A-E`. The profile now follows those visible chart labels as separate action steps, so an early `lib2_available()` state only skips the R1 slot and no longer aborts the later R2 and E-2A-E slots.
 
+The next live-combat log and local recording showed that the "skip R1 when `lib2_available()` is already visible" guard was still too aggressive. At the chart's `Q-2A-R` slot, the Bilibili video explicitly continues into `1-chain-heavy-enhancedE`, while the script log had `aemeath R1 skipped` followed by `one-chain step skipped`. The profile now treats `Q-2A-R` as a chart-mandated R1 slot: a visible lib2 template only produces a warning and no longer suppresses the R key. R2 handling was also tightened so a sent R2 key is recorded as a successful R2 even if the lib2 icon remains visible for the short post-send observation window.
+
+The same log showed abnormal blocking waits in non-Aemeath support steps: Denia `2A-enhancedE-R2` waited inside `Denia.click_liberation()` for 2-4s, and Chisa `R-enhancedE` waited inside `Chisa.click_liberation()` for about 3.4s. These are chart key slots, not places where the profile should wait for the full liberation animation before advancing. Both steps now send the liberation key through the profile's non-blocking tap helper, preserving buff/usage bookkeeping while letting the next chart step and switch logic progress as soon as the game allows.
+
 ## Verification
 
 - `.\.venv\Scripts\python.exe -m unittest tests.TestTeamRotation -v` passed.
@@ -45,6 +49,11 @@ Follow-up live logs and a direct Chrome video check against `BV1aDGe6JEwT` showe
 - `.\.venv\Scripts\python.exe -m unittest tests.TestCombatCheck -v` passed.
 - `git diff --check` reported only CRLF normalization warnings.
 - `python -m unittest tests.TestTeamRotation -v` passed after the follow-up axis correction.
+- `python -m unittest tests.TestTeamRotation -v` passed after restoring chart-mandated Aemeath R1 and lingering-icon R2 handling.
+- `git diff --check` passed after restoring chart-mandated Aemeath R1 and lingering-icon R2 handling.
+- `python -m unittest tests.TestTeamRotation -v` passed after changing Chisa `R-enhancedE` and Denia `2A-enhancedE-R2` to non-blocking liberation taps.
+- `git diff --check` passed after changing Chisa `R-enhancedE` and Denia `2A-enhancedE-R2` to non-blocking liberation taps.
+- `python -m unittest tests.TestChar -v` could not run in this local environment because `config.py` imports the unavailable `ok` package.
 - `python -m unittest -v` and `python -m unittest discover -v` both reported `NO TESTS RAN` in this repository layout; targeted module execution is the useful check here.
 
 Running `tests.TestChar tests.TestCombatCheck` in the same process fails after `TestChar` tears down the shared ok executor, causing `TestCombatCheck.set_image()` to raise `FinishedException`. Running the two classes independently passes.

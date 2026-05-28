@@ -191,13 +191,13 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         return sent
 
     def _cast_aemeath_r1(self, aemeath):
-        if hasattr(aemeath, 'lib2_available') and aemeath.lib2_available():
-            logger.warning(f'team rotation aemeath R1 skipped: {self.name} lib2 already available')
-            return False
         available = aemeath.liberation_available() if hasattr(aemeath, 'liberation_available') else True
         if not available:
             logger.warning(f'team rotation aemeath R1 unavailable: {self.name}')
             return False
+        if hasattr(aemeath, 'lib2_available') and aemeath.lib2_available():
+            logger.warning(
+                f'team rotation aemeath R1 slot continues: {self.name} lib2 template visible before chart R1')
         sent = self._send_aemeath_liberation_key(aemeath, 'R1')
         if sent and hasattr(aemeath, 'record_liberation'):
             aemeath.record_liberation(False)
@@ -240,7 +240,11 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         consumed = True
         if sent and hasattr(aemeath, 'lib2_available'):
             consumed = self._wait_frames_until(aemeath, lambda: not aemeath.lib2_available(), 12, f'{label}-consumed')
-        ret = bool(sent and consumed)
+            if not consumed:
+                logger.warning(
+                    f'team rotation aemeath R2 consume state not observed: {self.name} {label} '
+                    f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
+        ret = bool(sent)
         if ret:
             if hasattr(aemeath, 'record_liberation'):
                 aemeath.record_liberation(True)
@@ -280,7 +284,7 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
         self._resonance(chisa, 'enhancedE', time_out=0.6)
 
     def _chisa_r_enhanced_e(self, chisa):
-        if self._liberation(chisa, 'R'):
+        if self._tap_liberation(chisa, 'R', after_sleep=0.2):
             chisa.record_support_buff()
             self._normal(chisa, 0.25, 'post-R')
         self._resonance(chisa, 'enhancedE', time_out=0.6)
@@ -320,7 +324,7 @@ class AemeathDeniaChisaProfile(TeamRotationProfile):
             denia.wait_intro(0.8)
         self._normal(denia, 0.3, '2A')
         self._resonance(denia, 'enhancedE', time_out=0.7)
-        if self._liberation(denia, 'R2'):
+        if self._tap_liberation(denia, 'R2', after_sleep=0.2):
             self._normal(denia, 0.25, 'post-R2')
 
     def _aemeath_a2a3_e(self, aemeath):

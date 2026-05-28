@@ -265,6 +265,31 @@ class TestTeamRotation(unittest.TestCase):
             ['Q-2A-R', 'enhancedE', 'execute-2A', '3A-enhancedE', 'fastHeavy-R2', 'E-2A-E'],
         )
 
+    def test_chisa_r_enhanced_e_uses_nonblocking_liberation_tap(self):
+        chisa = RecordingChar('Chisa', 2, True)
+        chisa.task = types.SimpleNamespace(use_liberation=True, combat_start=-1)
+
+        AemeathDeniaChisaProfile()._chisa_r_enhanced_e(chisa)
+        actions = [action[0] for action in chisa.actions]
+
+        self.assertIn('send_liberation', actions)
+        self.assertIn('record_liberation_use', actions)
+        self.assertIn('support_buff', actions)
+        self.assertIn('resonance', actions)
+        self.assertNotIn('liberation', actions)
+
+    def test_denia_r2_uses_nonblocking_liberation_tap(self):
+        denia = RecordingChar('Denia', 1, True)
+        denia.task = types.SimpleNamespace(use_liberation=True, combat_start=-1)
+
+        AemeathDeniaChisaProfile()._denia_2a_enhanced_e_r2(denia)
+        actions = [action[0] for action in denia.actions]
+
+        self.assertIn('send_liberation', actions)
+        self.assertIn('record_liberation_use', actions)
+        self.assertIn('resonance', actions)
+        self.assertNotIn('liberation', actions)
+
     def test_aemeath_burst_preserves_one_chain_heavy_when_r1_fails(self):
         class AemeathChar(RecordingChar):
             def __init__(self):
@@ -299,7 +324,7 @@ class TestTeamRotation(unittest.TestCase):
         self.assertNotIn('handle_heavy', actions)
         self.assertNotIn('heavy', actions)
 
-    def test_aemeath_skips_r1_when_r2_ready_but_still_casts_r2(self):
+    def test_aemeath_r1_slot_keeps_chart_r_when_lib2_template_is_visible(self):
         class AemeathChar(RecordingChar):
             def __init__(self):
                 super().__init__('Aemeath', 1, True)
@@ -307,10 +332,13 @@ class TestTeamRotation(unittest.TestCase):
 
             def lib2_available(self):
                 self.actions.append(('lib2_available', self.name))
-                return not any(action[0] == 'send_liberation' for action in self.actions)
+                return True
 
             def handle_heavy(self):
                 self.actions.append(('handle_heavy', self.name))
+                return True
+
+            def has_long_action(self):
                 return True
 
             def record_liberation(self, is_lib2):
@@ -322,15 +350,16 @@ class TestTeamRotation(unittest.TestCase):
         aemeath = AemeathChar()
         profile = AemeathDeniaChisaProfile()
         profile._aemeath_q_2a_r(aemeath)
-        self.assertFalse(profile.aemeath_r1_casted)
-        self.assertNotIn('send_liberation', [action[0] for action in aemeath.actions])
+        self.assertTrue(profile.aemeath_r1_casted)
+        self.assertIn(('record_liberation', 'Aemeath', False), aemeath.actions)
 
-        profile._aemeath_fast_heavy_r2_cycle(aemeath)
+        profile._aemeath_one_chain_heavy_enhanced_e(aemeath)
         actions = [action[0] for action in aemeath.actions]
 
         self.assertEqual(actions.count('send_liberation'), 1)
         self.assertIn('handle_heavy', actions)
-        self.assertIn(('record_liberation', 'Aemeath', True), aemeath.actions)
+        self.assertIn('resonance', actions)
+        self.assertFalse(profile.aemeath_r1_casted)
 
     def test_aemeath_r2_uses_detected_r2_state_directly(self):
         class AemeathChar(RecordingChar):
@@ -359,6 +388,30 @@ class TestTeamRotation(unittest.TestCase):
         self.assertTrue(ret)
         self.assertIn('send_liberation', actions)
         self.assertNotIn('lib', actions)
+        self.assertIn(('record_liberation', 'Aemeath', True), aemeath.actions)
+
+    def test_aemeath_r2_records_key_send_when_icon_lingers(self):
+        class AemeathChar(RecordingChar):
+            def __init__(self):
+                super().__init__('Aemeath', 1, True)
+                self.task = types.SimpleNamespace(use_liberation=True, combat_start=-1, next_frame=lambda: None)
+
+            def lib2_available(self):
+                self.actions.append(('lib2_available', self.name))
+                return True
+
+            def record_liberation(self, is_lib2):
+                self.actions.append(('record_liberation', self.name, is_lib2))
+
+            def f_break(self):
+                self.actions.append(('f_break', self.name))
+
+        aemeath = AemeathChar()
+        ret = AemeathDeniaChisaProfile()._cast_aemeath_r2(aemeath, 'R2', max_frames=1)
+        actions = [action[0] for action in aemeath.actions]
+
+        self.assertTrue(ret)
+        self.assertIn('send_liberation', actions)
         self.assertIn(('record_liberation', 'Aemeath', True), aemeath.actions)
 
     def test_aemeath_profile_allows_long_aemeath_axis(self):
