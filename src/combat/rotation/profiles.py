@@ -1,77 +1,380 @@
+import time
+
+from ok import Logger
+
 from src.combat.rotation.base import TeamRotationError, TeamRotationProfile, TeamRotationResult, TeamSignature
+
+
+logger = Logger.get_logger(__name__)
 
 
 class AemeathDeniaChisaProfile(TeamRotationProfile):
     """Developer profile based on the BV1aDGe6JEwT 5R2 Aemeath/Denia/Chisa chart."""
 
+    max_turn_seconds = 30
     signature = TeamSignature.of('Aemeath', 'Denia', 'Chisa')
-    startup_order = ('Chisa', 'Denia', 'Chisa', 'Denia', 'Chisa', 'Aemeath')
-    cycle_order = ('Chisa', 'Denia', 'Chisa', 'Aemeath')
+    startup_plan = (
+        ('Chisa', 'E', '_chisa_start_e'),
+        ('Denia', 'E-R-2A', '_denia_e_r_2a'),
+        ('Chisa', 'R-a3', '_chisa_r_a3'),
+        ('Denia', 'a3a4', '_denia_a3a4'),
+        ('Chisa', 'a4a5-Q', '_chisa_a4a5_q'),
+        ('Denia', '2A-enhancedE-R2', '_denia_2a_enhanced_e_r2'),
+        ('Chisa', 'enhancedE-tap-a2a3-finish', '_chisa_enhanced_e_finish'),
+        ('Aemeath', 'Q-a3a4-R1-heavy-enhancedE-execute-a3a4-enhancedE-fastHeavy-R2-E-2A-E', '_aemeath_startup_burst'),
+    )
+    cycle_plan = (
+        ('Chisa', 'E-a3', '_chisa_e_a3'),
+        ('Denia', 'E', '_denia_e'),
+        ('Aemeath', 'a2a3-E', '_aemeath_a2a3_e'),
+        ('Chisa', 'a4a5-Q', '_chisa_a4a5_q'),
+        ('Denia', 'R-2A', '_denia_r_2a'),
+        ('Chisa', 'R-enhancedE', '_chisa_r_enhanced_e'),
+        ('Aemeath', 'a2a3-E', '_aemeath_a2a3_e'),
+        ('Chisa', 'tap-a2a3-finish', '_chisa_finish'),
+        ('Denia', '2A-enhancedE-R2', '_denia_2a_enhanced_e_r2'),
+        ('Aemeath', 'Q-a3a4-R1-heavy-enhancedE-execute-a3a4-enhancedE-fastHeavy-R2-E-2A-E', '_aemeath_cycle_burst'),
+    )
 
     def __init__(self):
         self.startup_done = False
         self.step_index = 0
 
     def perform_turn(self, context):
-        order = self.cycle_order if self.startup_done else self.startup_order
-        expected = order[self.step_index]
+        plan = self.cycle_plan if self.startup_done else self.startup_plan
+        phase = 'cycle' if self.startup_done else 'startup'
+        expected, label, action_name = plan[self.step_index]
         current = context.current_char
+        elapsed = self._combat_elapsed(current)
+        logger.info(
+            f'team rotation step: {self.name} phase={phase} step={self.step_index} action={label} '
+            f'current={current.name}[{current.index}] expected={expected} combat_elapsed={elapsed:.2f}s')
         if current.name != expected:
             context.switch_to(expected)
             return TeamRotationResult.handled(f'switch to expected {expected}')
 
-        self._perform_current_axis(context, current.name)
+        self._perform_action(context, action_name, label)
         self._advance()
 
-        next_order = self.cycle_order if self.startup_done else self.startup_order
-        next_name = next_order[self.step_index]
+        next_plan = self.cycle_plan if self.startup_done else self.startup_plan
+        next_name = next_plan[self.step_index][0]
         if context.current_char.name != next_name:
             context.switch_to(next_name)
-        return TeamRotationResult.handled(f'{current.name} axis step')
+        return TeamRotationResult.handled(f'{current.name} {label}')
 
     def _advance(self):
-        order = self.cycle_order if self.startup_done else self.startup_order
+        order = self.cycle_plan if self.startup_done else self.startup_plan
         self.step_index += 1
         if self.step_index >= len(order):
-            self.startup_done = True
             self.step_index = 0
+            if not self.startup_done:
+                self.startup_done = True
+                logger.info(f'team rotation phase advanced: {self.name} startup_done={self.startup_done}')
+            else:
+                logger.info(f'team rotation cycle completed: {self.name}')
 
-    def _perform_current_axis(self, context, char_name):
-        if char_name == 'Chisa':
-            return self._perform_chisa(context.current_char)
-        if char_name == 'Denia':
-            return self._perform_denia(context.current_char)
-        if char_name == 'Aemeath':
-            return self._perform_aemeath(context.current_char)
-        raise TeamRotationError(f'unsupported axis char: {char_name}')
+    def _perform_action(self, context, action_name, label):
+        action = getattr(self, action_name, None)
+        if action is None:
+            raise TeamRotationError(f'unsupported chart action: {action_name}')
+        logger.info(
+            f'team rotation action start: {self.name} {context.current_char.name} {label} '
+            f'combat_elapsed={self._combat_elapsed(context.current_char):.2f}s')
+        action(context.current_char)
+        logger.info(
+            f'team rotation action end: {self.name} {context.current_char.name} {label} '
+            f'combat_elapsed={self._combat_elapsed(context.current_char):.2f}s')
 
-    def _perform_chisa(self, chisa):
+    def _combat_elapsed(self, char):
+        combat_start = getattr(getattr(char, 'task', None), 'combat_start', -1)
+        if combat_start is None or combat_start < 0:
+            return -1
+        return time.time() - combat_start
+
+    def _tap_frame(self, char):
+        if hasattr(char, 'click'):
+            char.click(interval=0.1)
+        elif hasattr(char, 'task') and hasattr(char.task, 'click'):
+            char.task.click(interval=0.1)
+        if hasattr(char, 'task') and hasattr(char.task, 'next_frame'):
+            char.task.next_frame()
+        elif hasattr(char, 'sleep'):
+            char.sleep(0.05)
+
+    def _wait_frames_until(self, char, predicate, max_frames, label):
+        for frame in range(max_frames):
+            if predicate():
+                logger.info(
+                    f'team rotation wait state ready: {self.name} {char.name} {label} '
+                    f'frames={frame} combat_elapsed={self._combat_elapsed(char):.2f}s')
+                return True
+            self._tap_frame(char)
+        ready = predicate()
+        logger.info(
+            f'team rotation wait state end: {self.name} {char.name} {label} '
+            f'ready={ready} frames={max_frames} combat_elapsed={self._combat_elapsed(char):.2f}s')
+        return ready
+
+    def _normal(self, char, duration, label, until_con_full=False):
+        logger.info(f'team rotation normal: {self.name} {char.name} {label} duration={duration}')
+        char.continues_normal_attack(duration, until_con_full=until_con_full)
+
+    def _resonance(self, char, label, **kwargs):
+        ret = char.click_resonance(**kwargs)
+        logger.info(f'team rotation resonance: {self.name} {char.name} {label} ret={ret}')
+        return ret
+
+    def _liberation(self, char, label, **kwargs):
+        ret = char.click_liberation(**kwargs)
+        logger.info(f'team rotation liberation: {self.name} {char.name} {label} ret={ret}')
+        return ret
+
+    def _tap_liberation(self, char, label, after_sleep=0.15):
+        if not getattr(char.task, 'use_liberation', True):
+            logger.info(f'team rotation liberation tap skipped: {self.name} {char.name} {label} use_liberation=False')
+            return False
+        available = char.liberation_available() if hasattr(char, 'liberation_available') else True
+        if not available:
+            logger.info(f'team rotation liberation tap unavailable: {self.name} {char.name} {label}')
+            return False
+        if hasattr(char, 'send_liberation_key'):
+            char.send_liberation_key()
+        else:
+            char.click_liberation(wait_if_cd_ready=0)
+        if hasattr(char, 'record_liberation_use'):
+            char.record_liberation_use()
+        if after_sleep > 0 and hasattr(char, 'sleep'):
+            char.sleep(after_sleep, check_combat=False)
+        logger.info(f'team rotation liberation tap: {self.name} {char.name} {label}')
+        return True
+
+    def _echo(self, char, label, **kwargs):
+        ret = char.click_echo(**kwargs)
+        logger.info(f'team rotation echo: {self.name} {char.name} {label} ret={ret}')
+        return ret
+
+    def _heavy(self, char, duration, label):
+        logger.info(f'team rotation heavy: {self.name} {char.name} {label} duration={duration}')
+        if hasattr(char, 'heavy_attack'):
+            char.heavy_attack(duration)
+        else:
+            self._normal(char, duration, label)
+
+    def _send_aemeath_liberation_key(self, aemeath, label, after_sleep=0.05):
+        if not getattr(aemeath.task, 'use_liberation', True):
+            logger.info(f'team rotation aemeath liberation key skipped: {self.name} {label} use_liberation=False')
+            return False
+        if hasattr(aemeath, 'send_liberation_key'):
+            try:
+                aemeath.send_liberation_key(after_sleep=after_sleep)
+            except TypeError:
+                aemeath.send_liberation_key()
+            sent = True
+        else:
+            sent = aemeath.click_liberation(wait_if_cd_ready=0)
+        if sent and hasattr(aemeath, 'record_liberation_use'):
+            aemeath.record_liberation_use()
+        logger.info(
+            f'team rotation aemeath liberation key: {self.name} {label} sent={sent} '
+            f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
+        return sent
+
+    def _cast_aemeath_r1(self, aemeath):
+        if hasattr(aemeath, 'lib2_available') and aemeath.lib2_available():
+            logger.warning(f'team rotation aemeath R1 skipped: {self.name} lib2 already available')
+            return False
+        available = aemeath.liberation_available() if hasattr(aemeath, 'liberation_available') else True
+        if not available:
+            logger.warning(f'team rotation aemeath R1 unavailable: {self.name}')
+            return False
+        sent = self._send_aemeath_liberation_key(aemeath, 'R1')
+        if sent and hasattr(aemeath, 'record_liberation'):
+            aemeath.record_liberation(False)
+        logger.info(f'team rotation aemeath R1 tap: {self.name} ret={sent}')
+        return sent
+
+    def _perform_aemeath_one_chain_heavy(self, aemeath, r1_casted):
+        if not r1_casted:
+            logger.warning(
+                f'team rotation one-chain heavy preserved: {self.name} R1 was not confirmed, skip stored heavy')
+            return False
+        if not hasattr(aemeath, 'handle_heavy'):
+            logger.warning(f'team rotation one-chain heavy unavailable: {self.name} no handle_heavy')
+            return False
+        start = time.time()
+        while not aemeath.has_long_action() and time.time() - start < 1.8:
+            self._tap_frame(aemeath)
+        if not aemeath.has_long_action():
+            logger.warning(
+                f'team rotation one-chain heavy unavailable: {self.name} no enhanced heavy window after R1')
+            return False
+        ret = aemeath.handle_heavy()
+        logger.info(
+            f'team rotation one-chain heavy: {self.name} ret={ret} '
+            f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
+        if ret and hasattr(aemeath, 'f_break'):
+            aemeath.f_break()
+        return ret
+
+    def _cast_aemeath_r2(self, aemeath, label, max_frames=36):
+        available = True
+        if hasattr(aemeath, 'lib2_available'):
+            available = self._wait_frames_until(aemeath, aemeath.lib2_available, max_frames, f'{label}-available')
+        if not available:
+            logger.warning(
+                f'team rotation aemeath R2 unavailable: {self.name} {label} '
+                f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
+            return False
+        sent = self._send_aemeath_liberation_key(aemeath, label)
+        consumed = True
+        if sent and hasattr(aemeath, 'lib2_available'):
+            consumed = self._wait_frames_until(aemeath, lambda: not aemeath.lib2_available(), 12, f'{label}-consumed')
+        ret = bool(sent and consumed)
+        if ret:
+            if hasattr(aemeath, 'record_liberation'):
+                aemeath.record_liberation(True)
+            if hasattr(aemeath, 'f_break'):
+                aemeath.f_break()
+        logger.info(
+            f'team rotation aemeath R2: {self.name} {label} ret={ret} '
+            f'combat_elapsed={self._combat_elapsed(aemeath):.2f}s')
+        return ret
+
+    def _enhanced_e(self, char, label, **kwargs):
+        ret = self._resonance(char, label, **kwargs)
+        clicked = ret[0] if isinstance(ret, tuple) else bool(ret)
+        if clicked and hasattr(char, 'record_enhance_e'):
+            char.record_enhance_e()
+        return ret
+
+    def _chisa_start_e(self, chisa):
+        self._resonance(chisa, 'E', time_out=0.6)
+        self._normal(chisa, 0.25, 'settle')
+
+    def _chisa_e_a3(self, chisa):
+        self._resonance(chisa, 'E', time_out=0.6)
+        self._normal(chisa, 0.45, 'a3')
+
+    def _chisa_r_a3(self, chisa):
+        if self._tap_liberation(chisa, 'R'):
+            chisa.record_support_buff()
+        self._normal(chisa, 0.35, 'a3')
+
+    def _chisa_a4a5_q(self, chisa):
+        self._normal(chisa, 0.55, 'a4a5')
+        self._echo(chisa, 'Q', time_out=0)
+
+    def _chisa_r_enhanced_e(self, chisa):
+        if self._liberation(chisa, 'R'):
+            chisa.record_support_buff()
+            self._normal(chisa, 0.25, 'post-R')
+        self._resonance(chisa, 'enhancedE', time_out=0.6)
+
+    def _chisa_enhanced_e_finish(self, chisa):
+        self._resonance(chisa, 'enhancedE', time_out=0.6)
+        self._chisa_finish(chisa)
+
+    def _chisa_finish(self, chisa):
+        self._normal(chisa, 1.2, 'tap-a2a3-finish', until_con_full=True)
         if chisa.has_intro:
             chisa.record_support_buff()
-            chisa.continues_normal_attack(0.35)
-        chisa.click_resonance(time_out=0.5)
-        chisa.continues_normal_attack(0.35)
-        if chisa.click_liberation():
-            chisa.record_support_buff()
-            chisa.continues_normal_attack(0.4)
-        chisa.click_echo(time_out=0)
         if chisa.is_forte_full():
             chisa.perform_forte()
 
-    def _perform_denia(self, denia):
+    def _denia_e(self, denia):
         if denia.has_intro:
             denia.wait_intro(1.0)
-        denia.click_resonance(time_out=0.5)
-        denia.continues_normal_attack(0.35)
-        if denia.click_liberation():
-            denia.continues_normal_attack(0.25)
-            denia.click_resonance(time_out=0.5)
-        denia.click_echo(time_out=0)
-        denia.continues_normal_attack(0.25)
+        self._resonance(denia, 'E', time_out=0.6)
 
-    def _perform_aemeath(self, aemeath):
+    def _denia_e_r_2a(self, denia):
+        if denia.has_intro:
+            denia.wait_intro(1.0)
+        self._resonance(denia, 'E', time_out=0.6)
+        self._tap_liberation(denia, 'R')
+        self._normal(denia, 0.25, '2A')
+
+    def _denia_a3a4(self, denia):
+        self._normal(denia, 0.45, 'a3a4')
+
+    def _denia_r_2a(self, denia):
+        self._tap_liberation(denia, 'R')
+        self._normal(denia, 0.25, '2A')
+
+    def _denia_2a_enhanced_e_r2(self, denia):
+        if denia.has_intro:
+            denia.wait_intro(0.8)
+        self._normal(denia, 0.3, '2A')
+        self._resonance(denia, 'enhancedE', time_out=0.7)
+        if self._liberation(denia, 'R2'):
+            self._normal(denia, 0.25, 'post-R2')
+
+    def _aemeath_a2a3_e(self, aemeath):
         if aemeath.has_intro:
             aemeath.record_intro_liberation()
-            aemeath.continues_normal_attack(0.6)
-        aemeath.click_echo(time_out=0)
-        aemeath.perform_everything()
+            self._normal(aemeath, 0.35, 'intro settle')
+        self._normal(aemeath, 0.45, 'a2a3')
+        self._enhanced_e(
+            aemeath,
+            'E',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.5,
+        )
+
+    def _aemeath_startup_burst(self, aemeath):
+        self._aemeath_burst(aemeath, r2_wait_frames=48)
+
+    def _aemeath_cycle_burst(self, aemeath):
+        self._aemeath_burst(aemeath, r2_wait_frames=36)
+
+    def _aemeath_burst(self, aemeath, r2_wait_frames=36):
+        if aemeath.has_intro:
+            aemeath.record_intro_liberation()
+            self._normal(aemeath, 0.6, 'intro settle')
+        self._echo(aemeath, 'Q', time_out=0)
+        self._normal(aemeath, 0.55, 'a3a4')
+        r1_casted = self._cast_aemeath_r1(aemeath)
+        if not self._perform_aemeath_one_chain_heavy(aemeath, r1_casted):
+            logger.warning(f'team rotation aemeath burst stopped before enhancedE-after-heavy: {self.name}')
+            return
+        self._enhanced_e(
+            aemeath,
+            'enhancedE-after-heavy',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.5,
+        )
+        self._normal(aemeath, 0.55, 'execute-a3a4')
+        self._enhanced_e(
+            aemeath,
+            'enhancedE-after-execute',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.5,
+        )
+        if hasattr(aemeath, 'handle_heavy') and aemeath.handle_heavy():
+            if hasattr(aemeath, 'f_break'):
+                aemeath.f_break()
+        else:
+            self._heavy(aemeath, 0.25, 'fast-heavy')
+        self._cast_aemeath_r2(aemeath, 'R2', max_frames=r2_wait_frames)
+        self._enhanced_e(
+            aemeath,
+            'E',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.2,
+        )
+        self._normal(aemeath, 0.3, '2A')
+        self._enhanced_e(
+            aemeath,
+            'final-E',
+            has_animation=True,
+            send_click=True,
+            animation_min_duration=0.5,
+            time_out=1.2,
+        )

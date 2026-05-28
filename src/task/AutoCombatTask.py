@@ -54,6 +54,19 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         if not self.use_liberation and not self.in_world():  # 仅大世界生效
             self.use_liberation = True
         combat_start = time.time()
+        if not self.in_combat():
+            return ret
+        logger.info(
+            f'auto combat entered combat: profile={getattr(getattr(self, "team_rotation_profile", None), "name", None)} '
+            f'disabled={getattr(self, "team_rotation_disabled", False)} '
+            f'reason={getattr(self, "team_rotation_fallback_reason", "")}')
+        if self.team_rotation_profile is None:
+            logger.info('auto combat profile missing before first turn; reload chars for team rotation')
+            self.load_chars()
+            logger.info(
+                f'auto combat after reload: profile={getattr(getattr(self, "team_rotation_profile", None), "name", None)} '
+                f'disabled={getattr(self, "team_rotation_disabled", False)} '
+                f'reason={getattr(self, "team_rotation_fallback_reason", "")}')
         while self.in_combat():
             ret = True
             try:

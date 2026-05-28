@@ -125,12 +125,16 @@ class TeamRotationContext:
 
         current = self.current_char
         if current == target:
+            logger.info(f'team rotation switch already current: {self.profile.name} {name}[{target.index}]')
             return target
 
         if has_intro is None:
             has_intro = current.is_con_full()
         if hasattr(self.task, '_apply_intro_flags'):
             self.task._apply_intro_flags(current, target, has_intro)
+        logger.info(
+            f'team rotation switch request: {self.profile.name} '
+            f'{current.name}[{current.index}] -> {target.name}[{target.index}] has_intro={has_intro}')
 
         def send_switch_key():
             if hasattr(current, 'f_break'):
@@ -163,6 +167,7 @@ class TeamRotationContext:
         for char in self.chars:
             char.is_current_char = char == target
         target.last_switch_in_time = time.time()
+        logger.info(f'team rotation switch success: {self.profile.name} current={target.name}[{target.index}]')
         return target
 
 
@@ -173,7 +178,13 @@ class TeamRotationRunner:
 
     def perform_turn(self):
         profile = getattr(self.task, 'team_rotation_profile', None)
-        if profile is None or getattr(self.task, 'team_rotation_disabled', False):
+        if profile is None:
+            logger.debug('team rotation skipped: no profile')
+            return self.task.perform_default_turn()
+        if getattr(self.task, 'team_rotation_disabled', False):
+            logger.debug(
+                f'team rotation skipped: profile disabled {profile.name} '
+                f'reason={getattr(self.task, "team_rotation_fallback_reason", "")}')
             return self.task.perform_default_turn()
 
         context = TeamRotationContext(self.task, profile)

@@ -13,7 +13,7 @@ from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
 from src.char.CharFactory import get_char_by_pos
 from src.combat.CombatCheck import CombatCheck
-from src.combat.rotation import DEFAULT_TEAM_ROTATION_REGISTRY, TeamRotationRunner
+from src.combat.rotation import DEFAULT_TEAM_ROTATION_REGISTRY, TeamRotationRunner, TeamSignature
 from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
 
 logger = Logger.get_logger(__name__)
@@ -614,11 +614,27 @@ class BaseCombatTask(CombatCheck):
 
     def refresh_team_rotation_profile(self):
         self._ensure_team_rotation()
-        self.team_rotation_profile = self.team_rotation_registry.match(self.chars)
+        signature = TeamSignature.from_chars(self.chars)
+        self.team_rotation_profile = self.team_rotation_registry.match(signature)
         self.team_rotation_disabled = False
         self.team_rotation_fallback_reason = ''
+        snapshot = [
+            {
+                'slot': getattr(char, 'index', None) + 1 if getattr(char, 'index', None) is not None else None,
+                'name': getattr(char, 'name', None),
+                'template': getattr(char, 'char_name', None),
+                'confidence': round(getattr(char, 'confidence', 0), 3),
+                'current': getattr(char, 'is_current_char', False),
+            }
+            for char in self.chars
+            if char is not None
+        ]
         if self.team_rotation_profile:
-            logger.info(f'team rotation profile matched: {self.team_rotation_profile.name}')
+            logger.info(
+                f'team rotation profile matched: {self.team_rotation_profile.name} '
+                f'signature={signature.names} chars={snapshot}')
+        else:
+            logger.info(f'team rotation profile not matched: signature={signature.names} chars={snapshot}')
 
     def reset_team_rotation_profile(self):
         self._ensure_team_rotation()
@@ -628,6 +644,12 @@ class BaseCombatTask(CombatCheck):
 
     def perform_default_turn(self):
         current_char = self.get_current_char(raise_exception=True)
+        profile = getattr(self, 'team_rotation_profile', None)
+        logger.debug(
+            f'team rotation default turn: current={current_char.name}[{current_char.index}] '
+            f'profile={getattr(profile, "name", None)} '
+            f'disabled={getattr(self, "team_rotation_disabled", False)} '
+            f'reason={getattr(self, "team_rotation_fallback_reason", "")}')
         current_char.perform()
         return True
 
