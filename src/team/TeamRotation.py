@@ -26,8 +26,16 @@ def _action_label(action):
         detail.append(f'count={action.count}')
     if action.duration:
         detail.append(f'duration={action.duration}')
-    if action.kwargs:
-        detail.append(f'kwargs={action.kwargs}')
+    visible_kwargs = {
+        key: value for key, value in action.kwargs.items()
+        if key not in {'pre_delay', 'post_delay'}
+    }
+    if action.kwargs.get('pre_delay'):
+        detail.append(f'pre_delay={action.kwargs["pre_delay"]}')
+    if action.kwargs.get('post_delay'):
+        detail.append(f'post_delay={action.kwargs["post_delay"]}')
+    if visible_kwargs:
+        detail.append(f'kwargs={visible_kwargs}')
     return ' '.join(detail)
 
 
@@ -38,6 +46,11 @@ def _log_once(task, key, message, level='info'):
     getattr(logger, level)(message)
     logged.add(key)
     task._team_rotation_log_keys = logged
+
+
+def _action_kwargs(action, *exclude):
+    excluded = {'pre_delay', 'post_delay', *exclude}
+    return {key: value for key, value in action.kwargs.items() if key not in excluded}
 
 
 @dataclass(frozen=True)
@@ -70,7 +83,17 @@ class TeamActionRunner:
         start = time.time()
         logger.info(f'team action start {context} char={char} action={_action_label(action)}')
         try:
+            pre_delay = action.kwargs.get('pre_delay', 0)
+            if pre_delay > 0:
+                logger.info(f'team action pre delay {context} char={char} action={action.label or action.name} '
+                            f'duration={pre_delay}s')
+                char.sleep(pre_delay)
             result = handler(char, action)
+            post_delay = action.kwargs.get('post_delay', 0)
+            if post_delay > 0:
+                logger.info(f'team action post delay {context} char={char} action={action.label or action.name} '
+                            f'duration={post_delay}s')
+                char.sleep(post_delay)
         except Exception as e:
             logger.error(
                 f'team action failed {context} char={char} action={_action_label(action)} '
@@ -101,7 +124,7 @@ class TeamActionRunner:
 
     def _run_resonance(self, char: BaseChar, action: TeamAction):
         kwargs = {'time_out': action.kwargs.get('time_out', 1)}
-        kwargs.update(action.kwargs)
+        kwargs.update(_action_kwargs(action))
         return char.click_resonance(**kwargs)
 
     def _run_enhanced_resonance(self, char: BaseChar, action: TeamAction):
@@ -111,7 +134,7 @@ class TeamActionRunner:
             wait_result = self.task.wait_until(enhanced_available, time_out=wait_time, raise_if_not_found=False)
             logger.info(f'team action enhanced resonance wait char={char} timeout={wait_time}s result={wait_result}')
         kwargs = {'send_click': True, 'time_out': action.kwargs.get('time_out', 1.5)}
-        kwargs.update({key: value for key, value in action.kwargs.items() if key not in {'wait_time'}})
+        kwargs.update(_action_kwargs(action, 'wait_time'))
         return char.click_resonance(**kwargs)
 
     def _run_liberation(self, char: BaseChar, action: TeamAction):
@@ -119,12 +142,12 @@ class TeamActionRunner:
         if callable(char_liberation):
             return char_liberation()
         kwargs = {'wait_if_cd_ready': action.kwargs.get('wait_if_cd_ready', 0)}
-        kwargs.update(action.kwargs)
+        kwargs.update(_action_kwargs(action))
         return char.click_liberation(**kwargs)
 
     def _run_echo(self, char: BaseChar, action: TeamAction):
         kwargs = {'time_out': action.kwargs.get('time_out', 0)}
-        kwargs.update(action.kwargs)
+        kwargs.update(_action_kwargs(action))
         return char.click_echo(**kwargs)
 
     def _run_heavy(self, char: BaseChar, action: TeamAction):
@@ -221,6 +244,19 @@ class TeamRotation:
         self.task.switch_to_char(current, target)
         return target.is_current_char
 
+    def handle_intro(self, char: BaseChar):
+        if not char.has_intro:
+            return
+        intro_key = getattr(char, 'last_switch_in_time', -1)
+        if getattr(char, '_team_rotation_intro_key', None) == intro_key:
+            return
+        logger.info(f'{self.name} intro hook char={char} switch_in={intro_key}')
+        record_intro_liberation = getattr(char, 'record_intro_liberation', None)
+        if callable(record_intro_liberation):
+            logger.info(f'{self.name} record intro liberation char={char}')
+            record_intro_liberation()
+        char._team_rotation_intro_key = intro_key
+
     def perform(self):
         step = self.current_step()
         if step is None:
@@ -239,6 +275,7 @@ class TeamRotation:
         if not self.ensure_current_char(char):
             logger.warning(f'{context} failed to align char={char}, fallback to role axis')
             return False
+        self.handle_intro(char)
         for action in step.actions:
             self.runner.run(char, action, context=context)
 

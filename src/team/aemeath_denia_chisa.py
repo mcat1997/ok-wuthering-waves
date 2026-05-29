@@ -22,8 +22,8 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Denia,
             (
-                action('resonance', 'E'),
-                action('liberation', 'R'),
+                action('resonance', 'E', post_delay=0.35),
+                action('liberation', 'R', wait_if_cd_ready=0.4),
                 action('normal', '2A', count=2),
             ),
             next_char_cls=Chisa,
@@ -48,8 +48,8 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Chisa,
             (
                 action('normal_chain', 'a4a5', duration=0.55),
-                action('echo', 'Q'),
-                action('enhanced_resonance', '强化E'),
+                action('echo', 'Q', post_delay=0.25),
+                action('enhanced_resonance', '强化E', pre_delay=0.15),
             ),
             next_char_cls=Denia,
             label='千咲 a4a5-Q-强化E',
@@ -57,9 +57,9 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Denia,
             (
-                action('normal', '2A', count=2),
-                action('enhanced_resonance', '强化E'),
-                action('liberation', 'R2'),
+                action('normal', '2A', count=2, post_delay=0.25),
+                action('enhanced_resonance', '强化E', pre_delay=0.15),
+                action('liberation', 'R2', wait_if_cd_ready=0.4),
             ),
             next_char_cls=Chisa,
             label='达妮娅 2A-强化E-R2',
@@ -77,16 +77,16 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Aemeath,
             (
-                action('echo', 'Q'),
+                action('echo', 'Q', post_delay=0.15),
                 action('normal_chain', 'a3a4', duration=0.45),
-                action('liberation', 'R1'),
+                action('liberation', 'R1', pre_delay=0.15, wait_if_cd_ready=0.4),
                 action('execute', '1链重击', duration=0.8),
                 action('enhanced_resonance', '强化E'),
                 action('execute', '处决'),
                 action('normal_chain', 'a3a4', duration=0.45),
                 action('enhanced_resonance', '强化E'),
                 action('heavy', '快速重击', duration=0.45),
-                action('liberation', 'R2'),
+                action('liberation', 'R2', wait_if_cd_ready=0.4),
                 action('resonance', 'E'),
                 action('normal', '2A', count=2),
                 action('resonance', 'E'),
@@ -126,7 +126,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Chisa,
             (
                 action('normal_chain', 'a4a5', duration=0.55),
-                action('echo', 'Q'),
+                action('echo', 'Q', post_delay=0.25),
             ),
             next_char_cls=Denia,
             label='千咲 a4(a5)-Q',
@@ -134,7 +134,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Denia,
             (
-                action('liberation', 'R'),
+                action('liberation', 'R', wait_if_cd_ready=0.4),
                 action('normal', '2A', count=2),
             ),
             next_char_cls=Chisa,
@@ -143,8 +143,8 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('liberation', 'R'),
-                action('enhanced_resonance', '强化E'),
+                action('liberation', 'R', wait_if_cd_ready=0.4),
+                action('enhanced_resonance', '强化E', pre_delay=0.15),
             ),
             next_char_cls=Aemeath,
             label='千咲 R-强化E',
@@ -171,9 +171,9 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Denia,
             (
-                action('normal', '2A', count=2),
-                action('enhanced_resonance', '强化E'),
-                action('liberation', 'R2'),
+                action('normal', '2A', count=2, post_delay=0.25),
+                action('enhanced_resonance', '强化E', pre_delay=0.15),
+                action('liberation', 'R2', wait_if_cd_ready=0.4),
             ),
             next_char_cls=Aemeath,
             next_free_intro=True,
@@ -182,16 +182,16 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Aemeath,
             (
-                action('echo', 'Q'),
+                action('echo', 'Q', post_delay=0.15),
                 action('normal_chain', 'a3a4', duration=0.45),
-                action('liberation', 'R1'),
+                action('liberation', 'R1', pre_delay=0.15, wait_if_cd_ready=0.4),
                 action('execute', '1链重击', duration=0.8),
                 action('enhanced_resonance', '强化E'),
                 action('execute', '处决'),
                 action('normal_chain', 'a3a4', duration=0.45),
                 action('enhanced_resonance', '强化E'),
                 action('heavy', '快速重击', duration=0.45),
-                action('liberation', 'R2'),
+                action('liberation', 'R2', wait_if_cd_ready=0.4),
                 action('resonance', 'E'),
                 action('normal', '2A', count=2),
                 action('resonance', 'E'),

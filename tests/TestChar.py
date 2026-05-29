@@ -1038,6 +1038,7 @@ class TestChar(TaskTestCase):
             def switch_to_char(self, current, target, free_intro=False):
                 self.switches.append((current, target, free_intro))
                 current.is_current_char = False
+                target.has_intro = free_intro
                 target.is_current_char = True
 
         task = Task()
@@ -1048,6 +1049,52 @@ class TestChar(TaskTestCase):
 
         self.assertTrue(rotation.perform())
         self.assertEqual(task.switches[-1], (task.chars[1], task.chars[0], False))
+
+    def test_team_rotation_runs_intro_hook_once_per_switch_in(self):
+        class IntroChar(BaseChar):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.intro_records = 0
+
+            def record_intro_liberation(self):
+                self.intro_records += 1
+
+        class Rotation(TeamRotation):
+            required_char_classes = (IntroChar,)
+            startup_steps = (
+                TeamRotationStep(
+                    IntroChar,
+                    (TeamAction(name='wait', duration=0),),
+                    label='intro',
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.combat_start = time.time()
+                self.chars = [IntroChar(self, 0)]
+                self.chars[0].is_current_char = True
+                self.chars[0].has_intro = True
+                self.chars[0].last_switch_in_time = 123
+
+            def sleep(self, *args, **kwargs):
+                pass
+
+            def get_current_char(self, raise_exception=False):
+                return self.chars[0]
+
+        task = Task()
+        rotation = Rotation(task)
+
+        self.assertTrue(rotation.perform())
+        self.assertEqual(task.chars[0].intro_records, 1)
+
+        rotation.startup_done = False
+        rotation.startup_index = 0
+        self.assertTrue(rotation.perform())
+        self.assertEqual(task.chars[0].intro_records, 1)
 
     def test_aemeath_lib(self):
         self.task.do_reset_to_false()
