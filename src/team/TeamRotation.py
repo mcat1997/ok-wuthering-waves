@@ -17,6 +17,9 @@ _ACTION_META_KEYS = (
     'force_on_fail',
     'force_down_time',
     'force_post_sleep',
+    'require_available',
+    'require_lib2',
+    'stop_on_fail',
 )
 _ACTION_META_KEY_SET = set(_ACTION_META_KEYS)
 
@@ -194,15 +197,21 @@ class TeamActionRunner:
     def _run_enhanced_resonance(self, char: BaseChar, action: TeamAction):
         wait_time = action.kwargs.get('wait_time', 1.2)
         enhanced_available = getattr(char, 'enhance_e_available', None)
+        wait_result = True
         if callable(enhanced_available):
             wait_result = self.task.wait_until(enhanced_available, time_out=wait_time, raise_if_not_found=False)
             logger.info(f'team action enhanced resonance wait char={char} timeout={wait_time}s result={wait_result}')
+            if action.kwargs.get('require_available', False) and not wait_result:
+                logger.warning(
+                    f'team action enhanced resonance unavailable char={char} action={_action_label(action)} '
+                    f'timeout={wait_time}s')
+                return False
         kwargs = {'send_click': True, 'time_out': action.kwargs.get('time_out', 1.5)}
         kwargs.update(_action_kwargs(action, 'wait_time'))
         result = char.click_resonance(**kwargs)
         if _action_succeeded(result):
             record_enhance_e = getattr(char, 'record_enhance_e', None)
-            if callable(record_enhance_e):
+            if callable(record_enhance_e) and wait_result:
                 record_enhance_e()
             return result
         if action.kwargs.get('force_on_fail', False):
@@ -226,10 +235,18 @@ class TeamActionRunner:
 
     def _run_liberation(self, char: BaseChar, action: TeamAction):
         char_liberation = getattr(char, 'lib', None)
+        if action.kwargs.get('require_lib2', False):
+            lib2_available = getattr(char, 'lib2_available', None)
+            if callable(lib2_available):
+                wait_time = action.kwargs.get('wait_time', 1.2)
+                wait_result = self.task.wait_until(lib2_available, time_out=wait_time, raise_if_not_found=False)
+                logger.info(f'team action liberation lib2 wait char={char} timeout={wait_time}s result={wait_result}')
+                if not wait_result:
+                    return False
         if callable(char_liberation):
             return char_liberation()
         kwargs = {'wait_if_cd_ready': action.kwargs.get('wait_if_cd_ready', 0)}
-        kwargs.update(_action_kwargs(action))
+        kwargs.update(_action_kwargs(action, 'wait_time'))
         return char.click_liberation(**kwargs)
 
     def _run_echo(self, char: BaseChar, action: TeamAction):
@@ -393,6 +410,11 @@ class TeamRotation:
                         f'startup_done={self.startup_done} startup_index={self.startup_index} '
                         f'loop_index={self.loop_index}')
                     return False
+                if action.kwargs.get('stop_on_fail', False):
+                    logger.warning(
+                        f'{context} action failed with stop_on_fail; skip remaining actions and switch '
+                        f'char={char} action={_action_label(action)} action_index={index}')
+                    break
             self.action_index = index + 1
 
         if step.next_char_cls is not None:

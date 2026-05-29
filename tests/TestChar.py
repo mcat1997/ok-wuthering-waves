@@ -1268,6 +1268,63 @@ class TestChar(TaskTestCase):
         self.assertTrue(rotation.startup_done)
         self.assertEqual(task.switches, [(task.chars[0], task.chars[1], False)])
 
+    def test_team_rotation_stop_on_fail_skips_remaining_actions_and_switches(self):
+        class First(BaseChar):
+            pass
+
+        class Second(BaseChar):
+            pass
+
+        class Rotation(TeamRotation):
+            required_char_classes = (First, Second)
+            startup_steps = (
+                TeamRotationStep(
+                    First,
+                    (
+                        TeamAction(name='wait', label='first'),
+                        TeamAction(name='wait', label='stopper', kwargs={'stop_on_fail': True}),
+                        TeamAction(name='wait', label='tail'),
+                    ),
+                    next_char_cls=Second,
+                    label='first-step',
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.combat_start = time.time()
+                self.chars = [First(self, 0), Second(self, 1)]
+                self.chars[0].is_current_char = True
+                self.switches = []
+
+            def get_current_char(self, raise_exception=False):
+                for char in self.chars:
+                    if char.is_current_char:
+                        return char
+                return None
+
+            def switch_to_char(self, current, target, free_intro=False):
+                self.switches.append((current, target, free_intro))
+                current.is_current_char = False
+                target.is_current_char = True
+
+        task = Task()
+        rotation = Rotation(task)
+        calls = []
+
+        def run_action(_char, action, context=''):
+            calls.append(action.label)
+            return action.label != 'stopper'
+
+        rotation.runner.run = run_action
+
+        self.assertTrue(rotation.perform())
+        self.assertEqual(calls, ['first', 'stopper'])
+        self.assertTrue(rotation.startup_done)
+        self.assertEqual(task.switches, [(task.chars[0], task.chars[1], False)])
+
     def test_team_action_runner_retries_false_results(self):
         class Task:
             def __init__(self):
@@ -1292,6 +1349,32 @@ class TestChar(TaskTestCase):
 
         self.assertTrue(result)
         self.assertEqual(len(calls), 2)
+
+    def test_enhanced_resonance_requires_detector_when_requested(self):
+        class Task:
+            def wait_until(self, *args, **kwargs):
+                return None
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.clicked = False
+
+            def enhance_e_available(self):
+                return False
+
+            def click_resonance(self, **kwargs):
+                self.clicked = True
+                return True, 0, False
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(char, TeamAction(name='enhanced_resonance', kwargs={'require_available': True}))
+
+        self.assertFalse(result)
+        self.assertFalse(char.clicked)
 
     def test_aemeath_lib(self):
         self.task.do_reset_to_false()

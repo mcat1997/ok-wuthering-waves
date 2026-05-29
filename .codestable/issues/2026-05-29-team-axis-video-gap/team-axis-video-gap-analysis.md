@@ -93,3 +93,26 @@ tags: [combat, team-axis, rotation]
 - required action 失败后不再切人和推进 step，交回角色轴兜底，避免用错误状态继续跑固定轴。
 - 对短时间内由目标识别丢失造成的 out-of-combat，允许在同一队伍下续用原 `TeamRotation`，保留 startup/loop 进度和 step 内 action 进度，避免在爱弥斯长 step 中断后重打一整段。
 - 对千咲这种教学轴明确要按、但 UI 可用性检测容易返回 false 的强化 E，允许按计划强制发一次共鸣键，并记录原始检测结果。
+
+## 7. 三次实战复盘：爱弥斯强化 E / R2 假成功
+
+用户 2026-05-29 11:33 录制的实战日志显示，二次修复后队伍轴没有再从头重跑启动段，但爱弥斯段仍有状态分叉：
+
+| 日志信号 | 说明 |
+|---|---|
+| 11:33:09、11:33:13、11:33:56、11:33:59 `enhanced resonance wait char=Aemeath timeout=1.2s result=None` 后仍记录 action 成功 | 爱弥斯“强化E”的前置图像未出现，但队伍轴继续点击共鸣并把它当强化 E 成功。实际可能只是普通 E。 |
+| 11:33:14、11:34:01 爱弥斯 `R2` 两次尝试均 `result=False` | 依赖前面强化 E / 重击状态的 R2 没有准备好。 |
+| 11:33:14 `R2` 失败后继续执行 `E`，随后 `combat check not in combat` | R2 失败后仍继续跑 `R2-E-2A-E` 尾段，导致真实状态继续偏离并触发长时间丢目标重进。 |
+
+### 追加根因
+
+1. `enhanced_resonance` 只“等待”角色专用强化 E 检测，但等待失败后仍调用普通 `click_resonance()` 并将其记录为成功。
+2. 爱弥斯 R2 前没有强校验 `lib2_available()`，R2 失败仍会继续执行后续依赖 R2 的尾段动作。
+3. “快速重击”用普通重击实现，没有复用 `Aemeath.handle_heavy()` 对高亮重击和 pending lib2 的处理。
+
+### 追加修复方案
+
+- 给 `enhanced_resonance` 增加 `require_available`：角色提供强化 E 检测时，等待失败就返回失败，不再把普通 E 伪装成强化 E。
+- 给 liberation 增加 `require_lib2`：R2 节点先等待 `lib2_available()`，没有 R2 图标时不点击解放。
+- 给 action 增加 `stop_on_fail`：爱弥斯 R2 失败时跳过后续 `E-2A-E` 尾段，直接按 step 的切人出口走，避免继续污染真实状态。
+- 爱弥斯“快速重击”改用 `execute`，优先走 `handle_heavy()`，保留角色已有的高亮重击 / pending lib2 处理。

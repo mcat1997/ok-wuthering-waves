@@ -39,6 +39,21 @@ tags: [combat, team-axis, rotation]
 - `python .codestable/tools/validate-yaml.py --dir .codestable/issues/2026-05-29-team-axis-video-gap` 通过。
 - 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
 
+## 三次修复内容
+
+- `enhanced_resonance` 新增 `require_available` 元参数：角色提供强化 E 检测时，等待不到强化 E 图标就返回失败，不再把普通 E 点击记录成强化 E 成功。
+- liberation 新增 `require_lib2` 元参数：爱弥斯 R2 会先等待 `lib2_available()`，没有 R2 图标时不释放解放。
+- action 新增 `stop_on_fail` 元参数：爱弥斯 R2 失败时跳过后续依赖 R2 的 `E-2A-E` 尾段，直接走该 step 的切人出口。
+- 爱弥斯“快速重击”从普通 `heavy` 改成 `execute`，优先复用 `Aemeath.handle_heavy()` 的高亮重击和 pending lib2 状态记录。
+- 爱弥斯两段强化 E 增加更长等待和 `require_available=True`，1 链重击 / 处决后补短后摇，减少动画锁期间误判。
+
+### 三次修复验证
+
+- `python -m py_compile src/team/__init__.py src/team/TeamRotation.py src/team/aemeath_denia_chisa.py src/task/AutoCombatTask.py src/task/BaseCombatTask.py tests/TestChar.py` 通过。
+- `git diff --check` 通过。
+- `python .codestable/tools/validate-yaml.py --dir .codestable/issues/2026-05-29-team-axis-video-gap` 通过。
+- 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
+
 ## 已知限制
 
 - 本次修复无法在本地直接复现实机战斗，只能基于用户提供的实战日志、实战视频和教学视频定位并修正明显偏差。
