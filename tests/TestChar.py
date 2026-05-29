@@ -8,9 +8,13 @@ from src.char.CharFactory import _get_buff_time, _get_char_type, char_dict, char
 from src.char.Aemeath import Aemeath
 from src.char.Chisa import Chisa
 from src.char.Ciaccona import Ciaccona
+from src.char.Denia import Denia
 from src.char.Linnai import Linnai
 from src.char.Phrolova import Phrolova
 from src.char.Verina import Verina
+from src.team import TeamRotation, TeamRotationStep, select_team_rotation
+from src.team.TeamRotation import TeamAction
+from src.team.aemeath_denia_chisa import AemeathDeniaChisaRotation
 from src.task.AutoCombatTask import AutoCombatTask
 
 config['debug'] = True
@@ -905,6 +909,145 @@ class TestChar(TaskTestCase):
 
         self.assertEqual(phrolova.get_switch_priority(current_char=current, has_intro=True), SwitchPriority.NO)
         self.assertEqual(combat._choose_switch_target(current, True), current)
+
+    def test_switch_to_char_uses_explicit_target(self):
+        class Task:
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                if start < 0:
+                    return 10000
+                return time.time() - start
+
+            def get_current_con(self):
+                return 0
+
+            def is_con_full(self):
+                return False
+
+        task = Task()
+        combat = AutoCombatTask.__new__(AutoCombatTask)
+        current = BaseChar(task, 0, char_type=CharType.MAIN_DPS)
+        default_target = BaseChar(task, 1, char_type=CharType.HEALER)
+        explicit_target = BaseChar(task, 2, char_type=CharType.SUB_DPS)
+        combat.chars = [current, default_target, explicit_target]
+        combat.sent_keys = []
+        combat.in_liberation = False
+        combat.update_lib_portrait_icon = lambda: None
+        combat.check_combat = lambda: None
+        combat.log_debug = lambda *args, **kwargs: None
+        combat.click = lambda: None
+        combat.sleep = lambda *args, **kwargs: None
+        combat.add_freeze_duration = lambda *args, **kwargs: None
+        current.f_break = lambda **kwargs: None
+        combat.send_key = lambda key: combat.sent_keys.append(key)
+        combat.in_team = lambda: (True, combat.sent_keys[-1] - 1 if combat.sent_keys else current.index, 3)
+
+        combat.switch_to_char(current, explicit_target, free_intro=True)
+
+        self.assertEqual(combat.sent_keys, [explicit_target.index + 1])
+        self.assertTrue(explicit_target.has_intro)
+        self.assertFalse(default_target.is_current_char)
+        self.assertTrue(explicit_target.is_current_char)
+
+    def test_select_team_rotation_matches_aemeath_denia_chisa_and_resets_per_combat(self):
+        class Task:
+            def __init__(self):
+                self.config = {'Use Team Axis': True}
+                self.char_config = {}
+                self.combat_start = time.time()
+                self.chars = [
+                    Aemeath(self, 0),
+                    Denia(self, 1),
+                    Chisa(self, 2),
+                ]
+
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                if start < 0:
+                    return 10000
+                return time.time() - start
+
+            def find_one(self, *args, **kwargs):
+                return False
+
+        task = Task()
+        rotation = select_team_rotation(task)
+        self.assertIsInstance(rotation, AemeathDeniaChisaRotation)
+        self.assertIs(select_team_rotation(task), rotation)
+
+        task.combat_start += 1
+        self.assertIsNot(select_team_rotation(task), rotation)
+
+        task.config['Use Team Axis'] = False
+        self.assertIsNone(select_team_rotation(task))
+
+    def test_aemeath_denia_chisa_loop_follows_tutorial_switch_order(self):
+        self.assertEqual(
+            [step.char_cls for step in AemeathDeniaChisaRotation.loop_steps],
+            [Chisa, Denia, Aemeath, Chisa, Denia, Chisa, Aemeath, Chisa, Denia, Aemeath],
+        )
+        self.assertEqual(
+            [step.next_char_cls for step in AemeathDeniaChisaRotation.loop_steps],
+            [Denia, Aemeath, Chisa, Denia, Chisa, Aemeath, Chisa, Denia, Aemeath, Chisa],
+        )
+
+    def test_team_rotation_runs_one_step_and_switches_fixed_target(self):
+        class First(BaseChar):
+            pass
+
+        class Second(BaseChar):
+            pass
+
+        class Rotation(TeamRotation):
+            required_char_classes = (First, Second)
+            startup_steps = (
+                TeamRotationStep(
+                    First,
+                    (TeamAction(name='wait', duration=0),),
+                    next_char_cls=Second,
+                    next_free_intro=True,
+                    label='first',
+                ),
+            )
+            loop_steps = (
+                TeamRotationStep(
+                    Second,
+                    (TeamAction(name='wait', duration=0),),
+                    next_char_cls=First,
+                    label='second',
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.skip_combat_check = False
+                self.combat_start = time.time()
+                self.chars = [First(self, 0), Second(self, 1)]
+                self.chars[0].is_current_char = True
+                self.switches = []
+
+            def sleep(self, *args, **kwargs):
+                pass
+
+            def get_current_char(self, raise_exception=False):
+                for char in self.chars:
+                    if char.is_current_char:
+                        return char
+                return None
+
+            def switch_to_char(self, current, target, free_intro=False):
+                self.switches.append((current, target, free_intro))
+                current.is_current_char = False
+                target.is_current_char = True
+
+        task = Task()
+        rotation = Rotation(task)
+        self.assertTrue(rotation.perform())
+        self.assertTrue(rotation.startup_done)
+        self.assertEqual(task.switches, [(task.chars[0], task.chars[1], True)])
+
+        self.assertTrue(rotation.perform())
+        self.assertEqual(task.switches[-1], (task.chars[1], task.chars[0], False))
 
     def test_aemeath_lib(self):
         self.task.do_reset_to_false()

@@ -434,15 +434,7 @@ class BaseCombatTask(CombatCheck):
         switch_to.has_intro = has_intro
         switch_to.has_sub_dps_intro = has_intro and current_char.is_sub_dps
 
-    def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
-        """切换到下一个最优角色。
-
-        Args:
-            current_char (BaseChar): 当前角色对象。
-            post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
-            free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
-            target_low_con (bool, optional): 是否优先切换到协奏值较低的角色。默认为 False。
-        """
+    def _switch_intro_state(self, current_char, free_intro=False):
         has_intro = free_intro
         current_con = 0
         self.update_lib_portrait_icon()
@@ -455,21 +447,24 @@ class BaseCombatTask(CombatCheck):
                 current_con = current_char.get_current_con()
             if current_con == 1:
                 has_intro = True
+        return has_intro, current_con
 
-        switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
+    def _switch_to_selected_char(self, current_char, switch_to, has_intro, current_con=0, post_action=None,
+                                 refresh_target=None, log_prefix='switch_next_char'):
         if not switch_to or switch_to == current_char:
             logger.warning(f"{current_char} can't find next char to switch to, performing too fast add a normal attack")
             current_char.continues_normal_attack(0.2)
             return
         self._apply_intro_flags(current_char, switch_to, has_intro)
         logger.info(
-            f'switch_next_char {current_char}({current_char.char_type}) -> {switch_to}({switch_to.char_type}) '
+            f'{log_prefix} {current_char}({current_char.char_type}) -> {switch_to}({switch_to.char_type}) '
             f'has_intro {switch_to.has_intro} has_sub_dps_intro {switch_to.has_sub_dps_intro} '
             f'current_con {current_con}')
         # if self.debug:
         #     self.screenshot(f'switch_next_char_{current_con}')
         from src.char.ShoreKeeper import ShoreKeeper
         last_click = 0
+        last_wait_log = 0
         start = time.time()
         while True:
             if not (isinstance(switch_to, ShoreKeeper) and has_intro):
@@ -481,15 +476,15 @@ class BaseCombatTask(CombatCheck):
                 refreshed_has_intro = has_intro or current_char.is_con_full()
                 if refreshed_has_intro != has_intro:
                     has_intro = refreshed_has_intro
-                    switch_to = self._choose_switch_target(current_char, has_intro,
-                                                           target_low_con=target_low_con)
-                    if not switch_to or switch_to == current_char:
-                        logger.warning(
-                            f"{current_char} can't find next char to switch to after intro refresh, "
-                            f"performing too fast add a normal attack")
-                        current_char.continues_normal_attack(0.2)
-                        return
-                    logger.info(f'switch_next_char refreshed target after intro became available: {switch_to}')
+                    if refresh_target:
+                        switch_to = refresh_target(has_intro)
+                        if not switch_to or switch_to == current_char:
+                            logger.warning(
+                                f"{current_char} can't find next char to switch to after intro refresh, "
+                                f"performing too fast add a normal attack")
+                            current_char.continues_normal_attack(0.2)
+                            return
+                        logger.info(f'{log_prefix} refreshed target after intro became available: {switch_to}')
                 self._apply_intro_flags(current_char, switch_to, has_intro)
                 if has_intro:
                     current_char.f_break(check_f_on_switch=True)
@@ -513,6 +508,12 @@ class BaseCombatTask(CombatCheck):
                 self.next_frame()
                 continue
             if current_index != switch_to.index:
+                if now - last_wait_log > 1:
+                    logger.info(
+                        f'{log_prefix} waiting current={current_char} target={switch_to} '
+                        f'detected_index={current_index} target_index={switch_to.index} '
+                        f'elapsed={now - start:.2f}s')
+                    last_wait_log = now
                 if now - start > 10:
                     if self.debug:
                         self.screenshot(f'switch_not_detected_{current_char}_to_{switch_to}')
@@ -528,13 +529,43 @@ class BaseCombatTask(CombatCheck):
                     current_time = time.time()
                     self.add_freeze_duration(current_time, switch_to.intro_motion_freeze_duration, -100)
                     current_char.last_outro_time = current_time
+                logger.info(
+                    f'{log_prefix} detected target current={current_char} target={switch_to} '
+                    f'index={current_index} has_intro={has_intro} elapsed={now - start:.2f}s')
                 break
             self.next_frame()
 
         if post_action:
             logger.debug(f'post_action {post_action}')
             post_action(switch_to, has_intro)
-        logger.info(f'switch_next_char end {(current_char.last_switch_time - start):.3f}s')
+        logger.info(f'{log_prefix} end {(current_char.last_switch_time - start):.3f}s')
+
+    def switch_to_char(self, current_char, switch_to, post_action=None, free_intro=False):
+        """切换到指定角色，供队伍轴这种显式编排使用。"""
+        has_intro, current_con = self._switch_intro_state(current_char, free_intro=free_intro)
+        logger.info(
+            f'switch_to_char request current={current_char} target={switch_to} '
+            f'free_intro={free_intro} resolved_has_intro={has_intro} current_con={current_con}')
+        self._switch_to_selected_char(current_char, switch_to, has_intro, current_con=current_con,
+                                      post_action=post_action, log_prefix='switch_to_char')
+
+    def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
+        """切换到下一个最优角色。
+
+        Args:
+            current_char (BaseChar): 当前角色对象。
+            post_action (callable, optional): 切换后执行的动作 (回调函数)。默认为 None。
+            free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
+            target_low_con (bool, optional): 是否优先切换到协奏值较低的角色。默认为 False。
+        """
+        has_intro, current_con = self._switch_intro_state(current_char, free_intro=free_intro)
+        switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
+
+        def refresh_target(refreshed_has_intro):
+            return self._choose_switch_target(current_char, refreshed_has_intro, target_low_con=target_low_con)
+
+        self._switch_to_selected_char(current_char, switch_to, has_intro, current_con=current_con,
+                                      post_action=post_action, refresh_target=refresh_target)
 
     def find_mouse_forte(self):
         return self.find_one('mouse_forte', horizontal_variance=0.025, vertical_variance=0.015, threshold=0.6,

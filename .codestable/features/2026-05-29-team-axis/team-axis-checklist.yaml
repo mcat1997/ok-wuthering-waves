@@ -1,0 +1,39 @@
+feature: 2026-05-29-team-axis
+status: done
+steps:
+  - id: step-1
+    title: 编排骨架
+    status: done
+    exit_signal: AutoCombatTask can select and invoke a matching TeamRotation.
+  - id: step-2
+    title: 固定切人
+    status: done
+    exit_signal: TeamRotation can switch to an explicit target without changing default switch_next_char selection.
+  - id: step-3
+    title: 动作节点
+    status: done
+    exit_signal: TeamActionRunner maps common team-axis actions onto BaseChar helpers with bounded waits.
+  - id: step-4
+    title: 爱达千队伍轴
+    status: done
+    exit_signal: Aemeath/Denia/Chisa startup and loop plans are declared from the tutorial chart.
+  - id: step-5
+    title: 验证与文档
+    status: done
+    exit_signal: Focused checks pass or any unavailable runtime dependency is reported.
+checks:
+  - id: check-scope
+    title: 范围守护
+    status: done
+  - id: check-interface
+    title: TeamRotation 接口契约
+    status: done
+  - id: check-flow
+    title: 队伍轴编排流程
+    status: done
+  - id: check-mounts
+    title: 挂载点可卸载性
+    status: done
+  - id: check-video-axis
+    title: 教学视频动作节点覆盖
+    status: done
