@@ -8,6 +8,26 @@ from src.char.BaseChar import BaseChar
 
 logger = Logger.get_logger(__name__)
 
+_ACTION_META_KEYS = (
+    'pre_delay',
+    'post_delay',
+    'attempts',
+    'retry_delay',
+    'required',
+    'force_on_fail',
+    'force_down_time',
+    'force_post_sleep',
+)
+_ACTION_META_KEY_SET = set(_ACTION_META_KEYS)
+
+_TRANSIENT_OUT_OF_COMBAT_REASONS = (
+    'target enemy failed',
+    'combat check not in combat',
+    'sleep check not in combat',
+    'not in_team while switching',
+    'failed switch chars',
+)
+
 
 def _team_signature(chars):
     return ','.join(f'{char.__class__.__name__}[{char.index}]' for char in chars if char is not None) or 'empty'
@@ -28,12 +48,11 @@ def _action_label(action):
         detail.append(f'duration={action.duration}')
     visible_kwargs = {
         key: value for key, value in action.kwargs.items()
-        if key not in {'pre_delay', 'post_delay'}
+        if key not in _ACTION_META_KEY_SET
     }
-    if action.kwargs.get('pre_delay'):
-        detail.append(f'pre_delay={action.kwargs["pre_delay"]}')
-    if action.kwargs.get('post_delay'):
-        detail.append(f'post_delay={action.kwargs["post_delay"]}')
+    for key in _ACTION_META_KEYS:
+        if action.kwargs.get(key):
+            detail.append(f'{key}={action.kwargs[key]}')
     if visible_kwargs:
         detail.append(f'kwargs={visible_kwargs}')
     return ' '.join(detail)
@@ -49,8 +68,34 @@ def _log_once(task, key, message, level='info'):
 
 
 def _action_kwargs(action, *exclude):
-    excluded = {'pre_delay', 'post_delay', *exclude}
+    excluded = {*_ACTION_META_KEY_SET, *exclude}
     return {key: value for key, value in action.kwargs.items() if key not in excluded}
+
+
+def _action_succeeded(result):
+    if result is None:
+        return True
+    if isinstance(result, tuple):
+        return bool(result[0]) if result else False
+    if isinstance(result, bool):
+        return result
+    return True
+
+
+def _is_required(action):
+    return bool(action.kwargs.get('required', False))
+
+
+def _is_transient_out_of_combat(reason):
+    reason = (reason or '').lower()
+    return any(transient in reason for transient in _TRANSIENT_OUT_OF_COMBAT_REASONS)
+
+
+def _team_axis_resume_window(task):
+    try:
+        return float(task.config.get('Team Axis Resume Window', 12))
+    except (TypeError, ValueError):
+        return 12
 
 
 @dataclass(frozen=True)
@@ -80,28 +125,47 @@ class TeamActionRunner:
         handler = getattr(self, f'_run_{action.name}', None)
         if handler is None:
             raise ValueError(f'Unknown team action: {action.name}')
-        start = time.time()
-        logger.info(f'team action start {context} char={char} action={_action_label(action)}')
-        try:
-            pre_delay = action.kwargs.get('pre_delay', 0)
-            if pre_delay > 0:
-                logger.info(f'team action pre delay {context} char={char} action={action.label or action.name} '
-                            f'duration={pre_delay}s')
-                char.sleep(pre_delay)
-            result = handler(char, action)
-            post_delay = action.kwargs.get('post_delay', 0)
-            if post_delay > 0:
-                logger.info(f'team action post delay {context} char={char} action={action.label or action.name} '
-                            f'duration={post_delay}s')
-                char.sleep(post_delay)
-        except Exception as e:
-            logger.error(
-                f'team action failed {context} char={char} action={_action_label(action)} '
-                f'elapsed={time.time() - start:.2f}s error={e}')
-            raise
-        logger.info(
-            f'team action end {context} char={char} action={_action_label(action)} '
-            f'elapsed={time.time() - start:.2f}s result={_short_value(result)}')
+        attempts = max(1, int(action.kwargs.get('attempts', 1) or 1))
+        retry_delay = action.kwargs.get('retry_delay', 0.2)
+        result = None
+        for attempt in range(1, attempts + 1):
+            start = time.time()
+            logger.info(
+                f'team action start {context} char={char} action={_action_label(action)} '
+                f'attempt={attempt}/{attempts}')
+            try:
+                pre_delay = action.kwargs.get('pre_delay', 0)
+                if pre_delay > 0:
+                    logger.info(f'team action pre delay {context} char={char} action={action.label or action.name} '
+                                f'duration={pre_delay}s attempt={attempt}/{attempts}')
+                    char.sleep(pre_delay)
+                result = handler(char, action)
+                success = _action_succeeded(result)
+                post_delay = action.kwargs.get('post_delay', 0)
+                if post_delay > 0 and (success or attempt == attempts):
+                    logger.info(f'team action post delay {context} char={char} action={action.label or action.name} '
+                                f'duration={post_delay}s attempt={attempt}/{attempts}')
+                    char.sleep(post_delay)
+            except Exception as e:
+                logger.error(
+                    f'team action failed {context} char={char} action={_action_label(action)} '
+                    f'attempt={attempt}/{attempts} elapsed={time.time() - start:.2f}s error={e}')
+                raise
+            logger.info(
+                f'team action end {context} char={char} action={_action_label(action)} '
+                f'attempt={attempt}/{attempts} elapsed={time.time() - start:.2f}s '
+                f'success={success} result={_short_value(result)}')
+            if success:
+                return result
+            if attempt < attempts:
+                logger.warning(
+                    f'team action unsuccessful {context} char={char} action={_action_label(action)} '
+                    f'attempt={attempt}/{attempts} retry_delay={retry_delay}s result={_short_value(result)}')
+                if retry_delay > 0:
+                    char.sleep(retry_delay)
+        logger.warning(
+            f'team action exhausted {context} char={char} action={_action_label(action)} '
+            f'attempts={attempts} result={_short_value(result)}')
         return result
 
     def _run_wait(self, char: BaseChar, action: TeamAction):
@@ -135,7 +199,30 @@ class TeamActionRunner:
             logger.info(f'team action enhanced resonance wait char={char} timeout={wait_time}s result={wait_result}')
         kwargs = {'send_click': True, 'time_out': action.kwargs.get('time_out', 1.5)}
         kwargs.update(_action_kwargs(action, 'wait_time'))
-        return char.click_resonance(**kwargs)
+        result = char.click_resonance(**kwargs)
+        if _action_succeeded(result):
+            record_enhance_e = getattr(char, 'record_enhance_e', None)
+            if callable(record_enhance_e):
+                record_enhance_e()
+            return result
+        if action.kwargs.get('force_on_fail', False):
+            down_time = action.kwargs.get('force_down_time', 0.05)
+            post_sleep = action.kwargs.get('force_post_sleep', 0)
+            logger.warning(
+                f'team action force enhanced resonance key char={char} action={_action_label(action)} '
+                f'original_result={_short_value(result)} down_time={down_time} post_sleep={post_sleep}')
+            char.check_combat()
+            char.send_resonance_key(post_sleep=post_sleep, down_time=down_time)
+            return True
+        return result
+
+    def _run_raw_resonance(self, char: BaseChar, action: TeamAction):
+        down_time = action.kwargs.get('down_time', action.duration if action.duration > 0 else 0.05)
+        post_sleep = action.kwargs.get('post_sleep', 0)
+        char.check_combat()
+        char.send_resonance_key(post_sleep=post_sleep, interval=action.kwargs.get('interval', -1),
+                                down_time=down_time)
+        return True
 
     def _run_liberation(self, char: BaseChar, action: TeamAction):
         char_liberation = getattr(char, 'lib', None)
@@ -183,7 +270,9 @@ class TeamRotation:
         self.combat_start = getattr(task, 'combat_start', 0)
         self.startup_index = 0
         self.loop_index = 0
+        self.action_index = 0
         self.startup_done = False
+        self.last_active_time = time.time()
         logger.info(
             f'{self.name} init combat_start={self.combat_start} '
             f'team={_team_signature(getattr(task, "chars", []))} '
@@ -221,6 +310,7 @@ class TeamRotation:
 
     def advance(self):
         before = self.step_context()
+        self.action_index = 0
         if not self.startup_done and self.startup_steps:
             self.startup_index += 1
             if self.startup_index >= len(self.startup_steps):
@@ -268,6 +358,7 @@ class TeamRotation:
             return False
 
         context = self.step_context()
+        self.last_active_time = time.time()
         logger.info(
             f'{context} begin label={step.label or step.char_cls.__name__} '
             f'char={char} next={step.next_char_cls.__name__ if step.next_char_cls else None} '
@@ -276,8 +367,33 @@ class TeamRotation:
             logger.warning(f'{context} failed to align char={char}, fallback to role axis')
             return False
         self.handle_intro(char)
-        for action in step.actions:
-            self.runner.run(char, action, context=context)
+        start_action_index = min(self.action_index, len(step.actions))
+        if start_action_index > 0:
+            if start_action_index >= len(step.actions):
+                logger.warning(
+                    f'{context} resume within step after actions, retry switch/advance '
+                    f'label={step.label or step.char_cls.__name__}')
+            else:
+                logger.warning(
+                    f'{context} resume within step action_index={start_action_index + 1}/{len(step.actions)} '
+                    f'label={step.label or step.char_cls.__name__}')
+        for index, action in enumerate(step.actions[start_action_index:], start=start_action_index):
+            self.action_index = index
+            try:
+                result = self.runner.run(char, action, context=context)
+            finally:
+                self.last_active_time = time.time()
+            if not _action_succeeded(result):
+                logger.warning(
+                    f'{context} action unsuccessful char={char} action={_action_label(action)} '
+                    f'required={_is_required(action)} result={_short_value(result)}')
+                if _is_required(action):
+                    logger.warning(
+                        f'{context} required action failed; hold current step and fallback to role axis '
+                        f'startup_done={self.startup_done} startup_index={self.startup_index} '
+                        f'loop_index={self.loop_index}')
+                    return False
+            self.action_index = index + 1
 
         if step.next_char_cls is not None:
             next_char = self.char(step.next_char_cls)
@@ -290,6 +406,7 @@ class TeamRotation:
                 logger.warning(f'{context} missing next char {step.next_char_cls.__name__}, skip switch')
         logger.info(f'{context} end label={step.label or step.char_cls.__name__}')
         self.advance()
+        self.last_active_time = time.time()
         return True
 
 
@@ -307,6 +424,23 @@ def select_team_rotation(task):
     existing = getattr(task, '_team_rotation', None)
     if existing and existing.combat_start == combat_start and existing.still_matches():
         return existing
+    if existing and existing.combat_start != combat_start and existing.still_matches():
+        resume_window = _team_axis_resume_window(task)
+        inactive_for = time.time() - getattr(existing, 'last_active_time', 0)
+        reason = getattr(task, 'out_of_combat_reason', '')
+        if resume_window > 0 and inactive_for <= resume_window and _is_transient_out_of_combat(reason):
+            old_combat_start = existing.combat_start
+            existing.combat_start = combat_start
+            logger.warning(
+                f'resumed team rotation {existing.name} after transient out-of-combat '
+                f'old_combat_start={old_combat_start} new_combat_start={combat_start} '
+                f'inactive_for={inactive_for:.2f}s window={resume_window}s reason={reason!r} '
+                f'step={existing.step_context()} team={signature}')
+            return existing
+        logger.info(
+            f'team rotation will reset instead of resume old={existing.name} '
+            f'old_combat_start={existing.combat_start} new_combat_start={combat_start} '
+            f'inactive_for={inactive_for:.2f}s window={resume_window}s reason={reason!r} team={signature}')
     if existing and existing.combat_start == combat_start and not existing.still_matches():
         _log_once(task, (combat_start, 'lost-match', signature),
                   f'team rotation lost match old={existing.name} team={signature}', level='warning')

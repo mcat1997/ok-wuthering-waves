@@ -26,12 +26,14 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             'Use Liberation': True,
             'Check Levitator': True,
             'Use Team Axis': True,
+            'Team Axis Resume Window': 12,
         })
         self.config_description = {
             'Auto Target': 'Turn off to enable auto combat only when manually target enemy using middle click',
             'Use Liberation': 'Do not use Liberation in Open World to Save Time',
             'Check Levitator': 'Toggle the levitator and verify if the character is floating',
             'Use Team Axis': 'Use fixed team rotations when the current team has a supported axis',
+            'Team Axis Resume Window': 'Resume a fixed team rotation after short target-loss combat resets',
         }
         self.op_index = 0
         self.char_features_warmed_up = False

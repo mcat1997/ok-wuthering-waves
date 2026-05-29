@@ -13,7 +13,7 @@ from src.char.Linnai import Linnai
 from src.char.Phrolova import Phrolova
 from src.char.Verina import Verina
 from src.team import TeamRotation, TeamRotationStep, select_team_rotation
-from src.team.TeamRotation import TeamAction
+from src.team.TeamRotation import TeamAction, TeamActionRunner
 from src.team.aemeath_denia_chisa import AemeathDeniaChisaRotation
 from src.task.AutoCombatTask import AutoCombatTask
 
@@ -979,6 +979,67 @@ class TestChar(TaskTestCase):
         task.config['Use Team Axis'] = False
         self.assertIsNone(select_team_rotation(task))
 
+    def test_select_team_rotation_resumes_after_transient_target_loss(self):
+        class Task:
+            def __init__(self):
+                self.config = {'Use Team Axis': True, 'Team Axis Resume Window': 12}
+                self.char_config = {}
+                self.combat_start = time.time()
+                self.out_of_combat_reason = ''
+                self.chars = [
+                    Aemeath(self, 0),
+                    Denia(self, 1),
+                    Chisa(self, 2),
+                ]
+
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                if start < 0:
+                    return 10000
+                return time.time() - start
+
+            def find_one(self, *args, **kwargs):
+                return False
+
+        task = Task()
+        rotation = select_team_rotation(task)
+        rotation.startup_index = 6
+        rotation.last_active_time = time.time() - 2
+
+        task.out_of_combat_reason = 'target enemy failed'
+        task.combat_start += 5
+
+        self.assertIs(select_team_rotation(task), rotation)
+        self.assertEqual(rotation.startup_index, 6)
+        self.assertEqual(rotation.combat_start, task.combat_start)
+
+    def test_select_team_rotation_does_not_resume_after_non_transient_end(self):
+        class Task:
+            def __init__(self):
+                self.config = {'Use Team Axis': True, 'Team Axis Resume Window': 12}
+                self.char_config = {}
+                self.combat_start = time.time()
+                self.out_of_combat_reason = 'end condition reached'
+                self.chars = [
+                    Aemeath(self, 0),
+                    Denia(self, 1),
+                    Chisa(self, 2),
+                ]
+
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                if start < 0:
+                    return 10000
+                return time.time() - start
+
+            def find_one(self, *args, **kwargs):
+                return False
+
+        task = Task()
+        rotation = select_team_rotation(task)
+        rotation.last_active_time = time.time() - 2
+        task.combat_start += 5
+
+        self.assertIsNot(select_team_rotation(task), rotation)
+
     def test_aemeath_denia_chisa_loop_follows_tutorial_switch_order(self):
         self.assertEqual(
             [step.char_cls for step in AemeathDeniaChisaRotation.loop_steps],
@@ -1095,6 +1156,142 @@ class TestChar(TaskTestCase):
         rotation.startup_index = 0
         self.assertTrue(rotation.perform())
         self.assertEqual(task.chars[0].intro_records, 1)
+
+    def test_team_rotation_required_action_failure_holds_step(self):
+        class First(BaseChar):
+            pass
+
+        class Second(BaseChar):
+            pass
+
+        class Rotation(TeamRotation):
+            required_char_classes = (First, Second)
+            startup_steps = (
+                TeamRotationStep(
+                    First,
+                    (TeamAction(name='wait', kwargs={'required': True}),),
+                    next_char_cls=Second,
+                    label='first',
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.combat_start = time.time()
+                self.chars = [First(self, 0), Second(self, 1)]
+                self.chars[0].is_current_char = True
+                self.switches = []
+
+            def get_current_char(self, raise_exception=False):
+                for char in self.chars:
+                    if char.is_current_char:
+                        return char
+                return None
+
+            def switch_to_char(self, current, target, free_intro=False):
+                self.switches.append((current, target, free_intro))
+
+        task = Task()
+        rotation = Rotation(task)
+        rotation.runner.run = lambda *args, **kwargs: False
+
+        self.assertFalse(rotation.perform())
+        self.assertEqual(rotation.startup_index, 0)
+        self.assertFalse(rotation.startup_done)
+        self.assertEqual(task.switches, [])
+
+    def test_team_rotation_resumes_interrupted_step_at_failed_action(self):
+        class First(BaseChar):
+            pass
+
+        class Second(BaseChar):
+            pass
+
+        class Rotation(TeamRotation):
+            required_char_classes = (First, Second)
+            startup_steps = (
+                TeamRotationStep(
+                    First,
+                    (
+                        TeamAction(name='wait', label='first'),
+                        TeamAction(name='wait', label='second'),
+                    ),
+                    next_char_cls=Second,
+                    label='first-step',
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.combat_start = time.time()
+                self.chars = [First(self, 0), Second(self, 1)]
+                self.chars[0].is_current_char = True
+                self.switches = []
+
+            def get_current_char(self, raise_exception=False):
+                for char in self.chars:
+                    if char.is_current_char:
+                        return char
+                return None
+
+            def switch_to_char(self, current, target, free_intro=False):
+                self.switches.append((current, target, free_intro))
+                current.is_current_char = False
+                target.is_current_char = True
+
+        task = Task()
+        rotation = Rotation(task)
+        calls = []
+        interrupted = {'value': False}
+
+        def run_action(_char, action, context=''):
+            calls.append(action.label)
+            if action.label == 'second' and not interrupted['value']:
+                interrupted['value'] = True
+                raise RuntimeError('interrupted')
+            return True
+
+        rotation.runner.run = run_action
+
+        with self.assertRaises(RuntimeError):
+            rotation.perform()
+
+        self.assertEqual(rotation.action_index, 1)
+        self.assertEqual(calls, ['first', 'second'])
+
+        self.assertTrue(rotation.perform())
+        self.assertEqual(calls, ['first', 'second', 'second'])
+        self.assertTrue(rotation.startup_done)
+        self.assertEqual(task.switches, [(task.chars[0], task.chars[1], False)])
+
+    def test_team_action_runner_retries_false_results(self):
+        class Task:
+            def __init__(self):
+                self.skip_combat_check = False
+                self.sleeps = []
+
+            def sleep(self, sec):
+                self.sleeps.append(sec)
+
+        task = Task()
+        char = BaseChar(task, 0)
+        runner = TeamActionRunner(task)
+        calls = []
+
+        def run_probe(_char, _action):
+            calls.append(1)
+            return len(calls) == 2
+
+        runner._run_probe = run_probe
+
+        result = runner.run(char, TeamAction(name='probe', kwargs={'attempts': 3, 'retry_delay': 0}))
+
+        self.assertTrue(result)
+        self.assertEqual(len(calls), 2)
 
     def test_aemeath_lib(self):
         self.task.do_reset_to_false()

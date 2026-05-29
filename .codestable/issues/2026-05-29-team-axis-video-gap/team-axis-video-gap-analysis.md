@@ -67,3 +67,29 @@ tags: [combat, team-axis, rotation]
 ### 推荐方案
 
 **推荐方案 A**，并补充 action 前后摇能力。它直接修复爱弥斯 R1 失败的主因，同时给具体 plan 提供低风险调参手段。
+
+## 6. 二次实战复盘：调度状态漂移
+
+用户 2026-05-29 11:02 录制的实战日志显示，上一轮修复后爱弥斯启动段 R1 已能在正确入场窗口内成功释放，但队伍轴仍会偏离教学视频。新的失败信号集中在调度层：
+
+| 日志信号 | 说明 |
+|---|---|
+| 11:02:24 `startup 8/8` 的爱弥斯 `E` 因 `combat check not in combat` 异常中断 | 同一场战斗短暂丢目标后，`AutoCombatTask` 结束本轮循环。 |
+| 11:02:32 重新 `selected team rotation` 且 `startup 1/8` 从头开始 | 同一战斗恢复目标后，`combat_start` 被 `load_chars()` 刷新，队伍轴被当成新战斗重建，启动轴重复执行。 |
+| 多个 action 返回 `False` 后仍然继续推进 | 例如千咲 `强化E`、达妮娅 `R2`、爱弥斯 `R1/R2/E` 等失败后，`TeamRotation.perform()` 仍切人和 `advance()`，导致固定轴和真实技能状态分离。 |
+| loop 10 爱弥斯 `R1` 返回 `False` 后继续执行重击、强化E、处决 | 这是关键动作失败后继续推进的直接证据，后续动作已经不再对应教学轴。 |
+
+### 补充根因
+
+1. `TeamRotation.perform()` 没有 action 成败语义，所有返回值都被当成“已执行完”，包括 `False` 和 `(False, 0, False)`。
+2. `select_team_rotation()` 只用 `combat_start` 判断是否同一轮轴，无法区分真实战斗结束和短暂 `target enemy failed` / `combat check not in combat`。
+3. 爱达千 plan 缺少“关键动作必须成功”的声明，失败节点没有重试、没有中止，也没有足够日志提示实际偏离点。
+
+### 补充修复方案
+
+在方案 A 基础上追加调度修复：
+
+- 队伍轴 action 支持 `attempts` / `retry_delay` / `required` / `force_on_fail` 等通用元参数，并在日志中输出每次尝试、失败、重试和最终结果。
+- required action 失败后不再切人和推进 step，交回角色轴兜底，避免用错误状态继续跑固定轴。
+- 对短时间内由目标识别丢失造成的 out-of-combat，允许在同一队伍下续用原 `TeamRotation`，保留 startup/loop 进度和 step 内 action 进度，避免在爱弥斯长 step 中断后重打一整段。
+- 对千咲这种教学轴明确要按、但 UI 可用性检测容易返回 false 的强化 E，允许按计划强制发一次共鸣键，并记录原始检测结果。
