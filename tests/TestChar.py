@@ -1449,6 +1449,44 @@ class TestChar(TaskTestCase):
         self.assertTrue(result)
         self.assertEqual(char.normal_chains, [(1.2, 0.07, True)])
 
+    def test_build_con_can_tap_resonance_while_building(self):
+        class Task:
+            def __init__(self):
+                self.skip_combat_check = False
+
+            def sleep(self, *_args, **_kwargs):
+                pass
+
+            def get_current_con(self):
+                return 0
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.normal_chains = []
+
+            def continues_normal_attack(self, duration, interval=0.1, after_sleep=0,
+                                        click_resonance_if_ready_and_return=False, until_con_full=False):
+                self.normal_chains.append(
+                    (duration, interval, click_resonance_if_ready_and_return, until_con_full))
+                self.current_con = 1
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(
+            char,
+            TeamAction(
+                name='build_con',
+                duration=1.2,
+                kwargs={'interval': 0.07, 'click_resonance_if_ready': True},
+            ),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(char.normal_chains, [(1.2, 0.07, True, True)])
+
     def test_enhanced_resonance_requires_detector_when_requested(self):
         class Task:
             def wait_until(self, *args, **kwargs):
@@ -1474,6 +1512,96 @@ class TestChar(TaskTestCase):
 
         self.assertFalse(result)
         self.assertFalse(char.clicked)
+
+    def test_enhanced_resonance_can_force_key_after_detector_timeout(self):
+        class Task:
+            def __init__(self):
+                self.wait_kwargs = None
+
+            def wait_until(self, *args, **kwargs):
+                self.wait_kwargs = kwargs
+                return None
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.sent_resonance = []
+                self.clicked = []
+                self.checks = 0
+
+            def enhance_e_available(self):
+                return False
+
+            def click_with_interval(self, interval=0.1):
+                self.clicked.append(interval)
+
+            def check_combat(self):
+                self.checks += 1
+
+            def send_resonance_key(self, post_sleep=0, interval=-1, down_time=0.01):
+                self.sent_resonance.append((post_sleep, interval, down_time))
+
+            def click_resonance(self, **_kwargs):
+                raise AssertionError('detector timeout should force the key without image click')
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(
+            char,
+            TeamAction(
+                name='enhanced_resonance',
+                kwargs={
+                    'require_available': True,
+                    'force_on_fail': True,
+                    'tap_while_wait': True,
+                    'resonance_while_wait': True,
+                    'force_down_time': 0.05,
+                    'force_post_sleep': 0.25,
+                },
+            ),
+        )
+
+        self.assertTrue(result)
+        task.wait_kwargs['post_action']()
+        self.assertEqual(char.clicked, [0.1])
+        self.assertGreaterEqual(len(char.sent_resonance), 2)
+        self.assertEqual(char.checks, 1)
+        self.assertEqual(char.sent_resonance[0], (0.25, -1, 0.05))
+        self.assertEqual(char.sent_resonance[-1], (0, -1, 0.01))
+
+    def test_raw_liberation_sends_liberation_key_without_cd_detector(self):
+        class Task:
+            pass
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.checked = 0
+                self.sent_liberation = []
+
+            def check_combat(self):
+                self.checked += 1
+
+            def send_liberation_key(self, after_sleep=0, interval=-1, down_time=0.01):
+                self.sent_liberation.append((after_sleep, interval, down_time))
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(
+            char,
+            TeamAction(
+                name='raw_liberation',
+                kwargs={'post_sleep': 0.25, 'down_time': 0.05},
+            ),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(char.checked, 1)
+        self.assertEqual(char.sent_liberation, [(0.25, -1, 0.05)])
 
     def test_aemeath_lib(self):
         self.task.do_reset_to_false()

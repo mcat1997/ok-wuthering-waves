@@ -71,7 +71,25 @@ tags: [combat, team-axis, rotation]
 - 通过本地 stub `ok` 的隔离脚本验证队伍轴核心分支：满协奏时切人不传 `free_intro=True` 但目标获得入场；未满协奏时不切人并保持当前 step；`build_con` 以 `until_con_full=True` 执行。
 - 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
 
+## 五次修复内容
+
+- 根据 2026-05-29 15:35 实战日志/视频重新对齐时间线：达妮娅在视频 t≈20.6s 的 `2A-强化E-R2` 中强化 E 成功但 R2 两次检测失败；爱弥斯在 t≈38.3s 第一次强化 E 连续等待并失败，随后队伍轴/角色轴反复抢同一 action。
+- `TeamActionRunner` 新增 `raw_liberation` 动作，用于达妮娅 R2 这种上下文二段 R：绕开普通 CD 检测，直接发送大招键，并记录 `raw liberation key` 日志。
+- `enhanced_resonance` 新增 `tap_while_wait` / `resonance_while_wait` / `resonance_wait_interval` 等元参数：等待强化 E 检测时同步普攻和周期性点 E，贴近教学视频“按住普攻同时不断点技能”的动作。
+- `enhanced_resonance` 支持在 `require_available=True` 超时后 `force_on_fail` 兜底按 E 并返回成功，避免 required action 失败后交给角色轴、再恢复到同一强化 E 继续发呆。
+- `build_con` 支持 `click_resonance_if_ready=True`，达妮娅变奏出口补协奏时间从 2.2s 提到 3.0s，并设置 `intro_retry_limit=2` 防止极端情况下无限卡补协奏。
+- 爱达千启动段和循环段的达妮娅 R2 改为 `raw_liberation`；爱弥斯两段强化 E 改为边普攻边点 E，检测超时后短兜底，不再返回 false 触发角色轴循环。
+- 补充单测覆盖：`build_con` 可带 E 补协奏；强化 E 检测超时可边打边等并兜底按 E；`raw_liberation` 会直接发大招键。
+
+### 五次修复验证
+
+- `python -m py_compile src/team/TeamRotation.py src/team/aemeath_denia_chisa.py tests/TestChar.py` 通过。
+- `git diff --check` 通过。
+- 最小 stub 脚本验证新增队伍轴 runner 行为通过：`build_con` 透传 `click_resonance_if_ready=True`；强化 E 超时触发 `force_on_fail` 并保留等待期 post_action；`raw_liberation` 直接发送大招键。
+- 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
+- 本地最小脚本第一次直接导入时还暴露当前环境缺少 `cv2`，已通过模块桩隔离队伍轴逻辑验证；这属于测试环境依赖缺失，不影响 `py_compile`。
+
 ## 已知限制
 
 - 本次修复无法在本地直接复现实机战斗，只能基于用户提供的实战日志、实战视频和教学视频定位并修正明显偏差。
-- 当前本地 Python 环境缺少 `ok` 依赖，`unittest` 仍无法导入项目测试入口。
+- 当前本地 Python 环境缺少 `ok` / `cv2` 依赖，`unittest` 仍无法导入项目测试入口。

@@ -21,6 +21,12 @@ _ACTION_META_KEYS = (
     'require_lib2',
     'stop_on_fail',
     'until_con_full',
+    'tap_while_wait',
+    'tap_interval',
+    'resonance_while_wait',
+    'resonance_wait_interval',
+    'resonance_wait_down_time',
+    'click_resonance_if_ready',
 )
 _ACTION_META_KEY_SET = set(_ACTION_META_KEYS)
 
@@ -197,14 +203,21 @@ class TeamActionRunner:
     def _run_build_con(self, char: BaseChar, action: TeamAction):
         duration = action.duration if action.duration > 0 else action.kwargs.get('time_out', 2.0)
         interval = action.kwargs.get('interval', 0.08)
+        click_resonance_if_ready = action.kwargs.get('click_resonance_if_ready', False)
         start_con = char.get_current_con()
         if start_con == 1:
             logger.info(f'team action build con already full char={char} current_con={start_con}')
             return True
-        char.continues_normal_attack(duration, interval=interval, until_con_full=True)
+        char.continues_normal_attack(
+            duration,
+            interval=interval,
+            click_resonance_if_ready_and_return=click_resonance_if_ready,
+            until_con_full=True,
+        )
         end_con = char.get_current_con()
         logger.info(
             f'team action build con end char={char} duration={duration}s interval={interval}s '
+            f'click_resonance_if_ready={click_resonance_if_ready} '
             f'start_con={start_con} end_con={end_con}')
         return end_con == 1
 
@@ -218,9 +231,40 @@ class TeamActionRunner:
         enhanced_available = getattr(char, 'enhance_e_available', None)
         wait_result = True
         if callable(enhanced_available):
-            wait_result = self.task.wait_until(enhanced_available, time_out=wait_time, raise_if_not_found=False)
-            logger.info(f'team action enhanced resonance wait char={char} timeout={wait_time}s result={wait_result}')
+            wait_kwargs = {'time_out': wait_time, 'raise_if_not_found': False}
+            tap_while_wait = action.kwargs.get('tap_while_wait', False)
+            resonance_while_wait = action.kwargs.get('resonance_while_wait', False)
+            if tap_while_wait or resonance_while_wait:
+                last_resonance_key_time = [0.0]
+
+                def post_action():
+                    if tap_while_wait:
+                        char.click_with_interval(action.kwargs.get('tap_interval', 0.1))
+                    if resonance_while_wait:
+                        now = time.time()
+                        resonance_interval = action.kwargs.get('resonance_wait_interval', 0.18)
+                        if now - last_resonance_key_time[0] >= resonance_interval:
+                            char.send_resonance_key(
+                                down_time=action.kwargs.get('resonance_wait_down_time', 0.01))
+                            last_resonance_key_time[0] = now
+
+                wait_kwargs['post_action'] = post_action
+            wait_result = self.task.wait_until(enhanced_available, **wait_kwargs)
+            logger.info(
+                f'team action enhanced resonance wait char={char} timeout={wait_time}s '
+                f'tap_while_wait={tap_while_wait} resonance_while_wait={resonance_while_wait} '
+                f'result={wait_result}')
             if action.kwargs.get('require_available', False) and not wait_result:
+                if action.kwargs.get('force_on_fail', False):
+                    down_time = action.kwargs.get('force_down_time', 0.05)
+                    post_sleep = action.kwargs.get('force_post_sleep', 0)
+                    logger.warning(
+                        f'team action force enhanced resonance key after unavailable char={char} '
+                        f'action={_action_label(action)} timeout={wait_time}s '
+                        f'down_time={down_time} post_sleep={post_sleep}')
+                    char.check_combat()
+                    char.send_resonance_key(post_sleep=post_sleep, down_time=down_time)
+                    return True
                 logger.warning(
                     f'team action enhanced resonance unavailable char={char} action={_action_label(action)} '
                     f'timeout={wait_time}s')
@@ -267,6 +311,17 @@ class TeamActionRunner:
         kwargs = {'wait_if_cd_ready': action.kwargs.get('wait_if_cd_ready', 0)}
         kwargs.update(_action_kwargs(action, 'wait_time'))
         return char.click_liberation(**kwargs)
+
+    def _run_raw_liberation(self, char: BaseChar, action: TeamAction):
+        down_time = action.kwargs.get('down_time', action.duration if action.duration > 0 else 0.05)
+        post_sleep = action.kwargs.get('post_sleep', 0)
+        logger.info(
+            f'team action raw liberation key char={char} action={_action_label(action)} '
+            f'down_time={down_time} post_sleep={post_sleep}')
+        char.check_combat()
+        char.send_liberation_key(after_sleep=post_sleep, interval=action.kwargs.get('interval', -1),
+                                 down_time=down_time)
+        return True
 
     def _run_echo(self, char: BaseChar, action: TeamAction):
         kwargs = {'time_out': action.kwargs.get('time_out', 0)}

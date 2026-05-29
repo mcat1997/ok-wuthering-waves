@@ -140,3 +140,27 @@ tags: [combat, team-axis, rotation]
 - 真正切人时不再把 `next_free_intro` 透传为底层 `free_intro=True`，而是让 `switch_to_char(..., free_intro=False)` 重新读取协奏，只有真实满协奏才会得到 `has_intro=True`。
 - `TeamActionRunner` 增加 `build_con`，复用普通攻击并以 `until_con_full=True` 停止条件补满协奏。
 - 爱达千 plan 加长达妮娅 / 千咲普攻段，并在千咲、达妮娅、爱弥斯所有变奏出口追加 `build_con`。
+
+## 9. 五次实战复盘：达妮娅 R2 检测失败与爱弥斯强化 E 等待空转
+
+用户 2026-05-29 15:35 录制的实战日志和视频显示，四次修复后变奏不再被无条件伪造，整体链路明显改善，但仍有两个新的真实偏差：
+
+| 时间点 | 日志信号 | 视频表现 | 结论 |
+|---|---|---|---|
+| 视频 t≈20.6s | 达妮娅 `2A-强化E-R2` 中强化 E 成功，随后 `R2` 两次 `result=False` | 达妮娅红色技能动作后很快切走，没有稳定打出二段 R 收尾 | 达妮娅 R2 不是普通大招 CD 检测能稳定表达的节点，需要队伍轴按教学动作直接按 R，并靠后续真实协奏检查兜底。 |
+| 视频 t≈38.3s | 爱弥斯第一次 `强化E` 连续等待 2.5s + 2.5s 均 `enhanced resonance unavailable` | 角色站场长时间无动作，随后角色轴介入切达妮娅，再回到同一 action 重复等待 | required action 失败后“回退角色轴再恢复同一 action”会形成空转循环；强化 E 等待期间也不应干等 UI，应按教学视频边普攻边点 E。 |
+| 视频 t≈53s 后 | `resume within step action_index=5/13` 后再次等同一个 `强化E` 并失败 | 爱弥斯继续发呆，直到用户结束录制 | 问题不是等待时间不够，而是失败恢复路径把同一不可用动作反复重跑。 |
+
+### 追加根因
+
+1. 达妮娅 R2 走 `click_liberation()`，依赖普通大招可用性 / CD 检测；实际队伍轴里的 R2 更像紧跟强化 E 的上下文二段 R，检测失败时直接放弃会少一段关键协奏来源。
+2. 爱弥斯强化 E 配成 `required=True + require_available=True`，检测不到时返回 `False`，`TeamRotation.perform()` 保持当前 action 并交给角色轴兜底，之后又从同一个强化 E action 恢复，形成长时间空转。
+3. 教学视频在爱弥斯强化 E 前后强调“按住普攻同时不断点技能”，当前实现只是等待图标亮，没有在等待窗口内继续推动动作状态。
+
+### 追加修复方案
+
+- 增加通用 `raw_liberation` action：用于达妮娅 R2 这种上下文二段 R，绕开普通 CD 检测，按计划直接发送大招键并输出日志。
+- `enhanced_resonance` 增加 `tap_while_wait` / `resonance_while_wait`：等待强化 E 图标时同时普攻和周期性点 E，贴近教学视频动作，而不是站着等。
+- `enhanced_resonance` 在 `require_available=True` 且等待超时时支持 `force_on_fail`：兜底发一次 E 键并返回成功，避免 required failure 触发角色轴反复抢控制。
+- 达妮娅变奏出口的 `build_con` 支持 `click_resonance_if_ready=True` 并延长到 3 秒；若 R2 或普攻节奏仍不稳定，队伍轴会先补真实协奏而不是 fake intro。
+- 给达妮娅变奏出口设置有限 `intro_retry_limit=2`，避免极端场景无限补协奏卡住。
