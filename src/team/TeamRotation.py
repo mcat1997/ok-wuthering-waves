@@ -20,6 +20,7 @@ _ACTION_META_KEYS = (
     'require_available',
     'require_lib2',
     'stop_on_fail',
+    'until_con_full',
 )
 _ACTION_META_KEY_SET = set(_ACTION_META_KEYS)
 
@@ -117,6 +118,8 @@ class TeamRotationStep:
     next_char_cls: type[BaseChar] | None = None
     next_free_intro: bool = False
     label: str = ''
+    intro_actions: tuple[TeamAction, ...] = ()
+    intro_retry_limit: int = 0
 
 
 class TeamActionRunner:
@@ -183,11 +186,27 @@ class TeamActionRunner:
 
     def _run_normal_chain(self, char: BaseChar, action: TeamAction):
         duration = action.duration if action.duration > 0 else 0.6
-        char.continues_normal_attack(duration, interval=action.kwargs.get('interval', 0.1))
+        char.continues_normal_attack(duration, interval=action.kwargs.get('interval', 0.1),
+                                     until_con_full=action.kwargs.get('until_con_full', False))
 
     def _run_tap_normal_chain(self, char: BaseChar, action: TeamAction):
         duration = action.duration if action.duration > 0 else 0.7
-        char.continues_normal_attack(duration, interval=action.kwargs.get('interval', 0.08))
+        char.continues_normal_attack(duration, interval=action.kwargs.get('interval', 0.08),
+                                     until_con_full=action.kwargs.get('until_con_full', False))
+
+    def _run_build_con(self, char: BaseChar, action: TeamAction):
+        duration = action.duration if action.duration > 0 else action.kwargs.get('time_out', 2.0)
+        interval = action.kwargs.get('interval', 0.08)
+        start_con = char.get_current_con()
+        if start_con == 1:
+            logger.info(f'team action build con already full char={char} current_con={start_con}')
+            return True
+        char.continues_normal_attack(duration, interval=interval, until_con_full=True)
+        end_con = char.get_current_con()
+        logger.info(
+            f'team action build con end char={char} duration={duration}s interval={interval}s '
+            f'start_con={start_con} end_con={end_con}')
+        return end_con == 1
 
     def _run_resonance(self, char: BaseChar, action: TeamAction):
         kwargs = {'time_out': action.kwargs.get('time_out', 1)}
@@ -288,6 +307,7 @@ class TeamRotation:
         self.startup_index = 0
         self.loop_index = 0
         self.action_index = 0
+        self.intro_retry_count = 0
         self.startup_done = False
         self.last_active_time = time.time()
         logger.info(
@@ -328,6 +348,7 @@ class TeamRotation:
     def advance(self):
         before = self.step_context()
         self.action_index = 0
+        self.intro_retry_count = 0
         if not self.startup_done and self.startup_steps:
             self.startup_index += 1
             if self.startup_index >= len(self.startup_steps):
@@ -363,6 +384,59 @@ class TeamRotation:
             logger.info(f'{self.name} record intro liberation char={char}')
             record_intro_liberation()
         char._team_rotation_intro_key = intro_key
+
+    def _check_intro_ready(self, char: BaseChar, context: str, phase: str):
+        try:
+            current_con = char.get_current_con()
+        except Exception as e:
+            logger.warning(f'{context} intro readiness check failed phase={phase} char={char} error={e}')
+            return False, 0
+        if current_con > 0.8 and current_con != 1:
+            logger.info(
+                f'{context} intro readiness almost full phase={phase} char={char} '
+                f'current_con={current_con:.2f}, wait and check again')
+            char.sleep(0.05)
+            next_frame = getattr(self.task, 'next_frame', None)
+            if callable(next_frame):
+                next_frame()
+            current_con = char.get_current_con()
+        ready = current_con == 1
+        logger.info(
+            f'{context} intro readiness phase={phase} char={char} '
+            f'current_con={current_con} ready={ready}')
+        return ready, current_con
+
+    def ensure_intro_ready(self, char: BaseChar, step: TeamRotationStep, context: str):
+        if not step.next_free_intro:
+            return True
+
+        ready, current_con = self._check_intro_ready(char, context, 'before-build')
+        if ready:
+            return True
+
+        if not step.intro_actions:
+            logger.warning(
+                f'{context} intro required but current con is not full and no intro actions are configured '
+                f'char={char} current_con={current_con}')
+            return False
+
+        for index, action in enumerate(step.intro_actions, start=1):
+            intro_context = f'{context} intro-build {index}/{len(step.intro_actions)}'
+            result = self.runner.run(char, action, context=intro_context)
+            if not _action_succeeded(result):
+                logger.warning(
+                    f'{intro_context} action unsuccessful char={char} action={_action_label(action)} '
+                    f'required={_is_required(action)} result={_short_value(result)}')
+                if _is_required(action):
+                    return False
+            ready, current_con = self._check_intro_ready(char, context, f'after-build-{index}')
+            if ready:
+                return True
+
+        logger.warning(
+            f'{context} intro still not ready after build actions char={char} current_con={current_con} '
+            f'actions={len(step.intro_actions)}')
+        return False
 
     def perform(self):
         step = self.current_step()
@@ -420,10 +494,26 @@ class TeamRotation:
         if step.next_char_cls is not None:
             next_char = self.char(step.next_char_cls)
             if next_char is not None:
+                if not self.ensure_intro_ready(char, step, context):
+                    self.intro_retry_count += 1
+                    self.action_index = len(step.actions)
+                    limit = max(0, int(step.intro_retry_limit or 0))
+                    logger.warning(
+                        f'{context} hold step because required intro is not ready '
+                        f'char={char} next={next_char} retry={self.intro_retry_count} '
+                        f'limit={limit or "unbounded"}')
+                    if limit > 0 and self.intro_retry_count >= limit:
+                        logger.warning(
+                            f'{context} intro retry limit exhausted; fallback to role axis '
+                            f'char={char} next={next_char} retry={self.intro_retry_count}')
+                        return False
+                    self.last_active_time = time.time()
+                    return True
+                free_intro = False
                 logger.info(
                     f'{context} switch request current={char} next={next_char} '
-                    f'free_intro={step.next_free_intro}')
-                self.task.switch_to_char(char, next_char, free_intro=step.next_free_intro)
+                    f'require_intro={step.next_free_intro} free_intro={free_intro}')
+                self.task.switch_to_char(char, next_char, free_intro=free_intro)
             else:
                 logger.warning(f'{context} missing next char {step.next_char_cls.__name__}, skip switch')
         logger.info(f'{context} end label={step.label or step.char_cls.__name__}')

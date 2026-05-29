@@ -54,6 +54,23 @@ tags: [combat, team-axis, rotation]
 - `python .codestable/tools/validate-yaml.py --dir .codestable/issues/2026-05-29-team-axis-video-gap` 通过。
 - 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
 
+## 四次修复内容
+
+- `TeamRotationStep` 增加 `intro_actions` / `intro_retry_limit`，让队伍轴能在 step 出口声明“这里要求真实变奏”，并在协奏未满时保持当前 step。
+- `TeamRotation.perform()` 在 `next_free_intro=True` 出口前先读取真实协奏并输出 `intro readiness` 日志；协奏未满时执行补协奏动作，仍未满则不切人、不推进，避免假变奏污染爱弥斯状态。
+- 队伍轴切人不再把 `next_free_intro` 透传为底层 `free_intro=True`；确认协奏满后用 `switch_to_char(..., free_intro=False)` 让底层重新读取真实协奏并设置 `has_intro`。
+- `TeamActionRunner` 新增 `build_con` 动作，并支持 `normal_chain` / `tap_normal_chain` 的 `until_con_full` 参数。
+- 爱达千轴加长达妮娅 / 千咲关键普攻段和 2A 间隔，并在千咲、达妮娅、爱弥斯所有变奏出口追加 `build_con`，优先保证协奏满再进入下一名角色。
+- 新增单测覆盖：队伍轴不会在协奏未满时强制 fake intro；真实满协奏时不会传 `free_intro=True` 但仍能得到入场；`build_con` 会以 `until_con_full=True` 执行普攻链。
+
+### 四次修复验证
+
+- `python -m py_compile src/team/__init__.py src/team/TeamRotation.py src/team/aemeath_denia_chisa.py src/task/AutoCombatTask.py src/task/BaseCombatTask.py tests/TestChar.py` 通过。
+- `git diff --check` 通过。
+- `python .codestable/tools/validate-yaml.py --dir .codestable/issues/2026-05-29-team-axis-video-gap` 通过。
+- 通过本地 stub `ok` 的隔离脚本验证队伍轴核心分支：满协奏时切人不传 `free_intro=True` 但目标获得入场；未满协奏时不切人并保持当前 step；`build_con` 以 `until_con_full=True` 执行。
+- 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
+
 ## 已知限制
 
 - 本次修复无法在本地直接复现实机战斗，只能基于用户提供的实战日志、实战视频和教学视频定位并修正明显偏差。

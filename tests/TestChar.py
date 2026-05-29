@@ -1085,10 +1085,17 @@ class TestChar(TaskTestCase):
                 self.combat_start = time.time()
                 self.chars = [First(self, 0), Second(self, 1)]
                 self.chars[0].is_current_char = True
+                self.chars[0].current_con = 1
                 self.switches = []
 
             def sleep(self, *args, **kwargs):
                 pass
+
+            def next_frame(self):
+                pass
+
+            def get_current_con(self):
+                return 0
 
             def get_current_char(self, raise_exception=False):
                 for char in self.chars:
@@ -1098,18 +1105,80 @@ class TestChar(TaskTestCase):
 
             def switch_to_char(self, current, target, free_intro=False):
                 self.switches.append((current, target, free_intro))
+                has_intro = free_intro or current.get_current_con() == 1
                 current.is_current_char = False
-                target.has_intro = free_intro
+                current.switch_out(con_full=has_intro)
+                target.has_intro = has_intro
                 target.is_current_char = True
 
         task = Task()
         rotation = Rotation(task)
         self.assertTrue(rotation.perform())
         self.assertTrue(rotation.startup_done)
-        self.assertEqual(task.switches, [(task.chars[0], task.chars[1], True)])
+        self.assertEqual(task.switches, [(task.chars[0], task.chars[1], False)])
+        self.assertTrue(task.chars[1].has_intro)
 
         self.assertTrue(rotation.perform())
         self.assertEqual(task.switches[-1], (task.chars[1], task.chars[0], False))
+
+    def test_team_rotation_holds_next_free_intro_until_current_con_is_full(self):
+        class First(BaseChar):
+            pass
+
+        class Second(BaseChar):
+            pass
+
+        class Rotation(TeamRotation):
+            required_char_classes = (First, Second)
+            startup_steps = (
+                TeamRotationStep(
+                    First,
+                    (TeamAction(name='wait', duration=0),),
+                    next_char_cls=Second,
+                    next_free_intro=True,
+                    label='first',
+                    intro_actions=(
+                        TeamAction(name='build_con', kwargs={'time_out': 0}),
+                    ),
+                ),
+            )
+
+        class Task:
+            config = {'Use Team Axis': True}
+
+            def __init__(self):
+                self.skip_combat_check = False
+                self.combat_start = time.time()
+                self.chars = [First(self, 0), Second(self, 1)]
+                self.chars[0].is_current_char = True
+                self.switches = []
+
+            def sleep(self, *args, **kwargs):
+                pass
+
+            def next_frame(self):
+                pass
+
+            def get_current_con(self):
+                return 0
+
+            def is_con_full(self):
+                return False
+
+            def get_current_char(self, raise_exception=False):
+                return self.chars[0]
+
+            def switch_to_char(self, current, target, free_intro=False):
+                self.switches.append((current, target, free_intro))
+
+        task = Task()
+        rotation = Rotation(task)
+
+        self.assertTrue(rotation.perform())
+        self.assertEqual(task.switches, [])
+        self.assertEqual(rotation.startup_index, 0)
+        self.assertEqual(rotation.action_index, 1)
+        self.assertFalse(task.chars[1].has_intro)
 
     def test_team_rotation_runs_intro_hook_once_per_switch_in(self):
         class IntroChar(BaseChar):
@@ -1349,6 +1418,36 @@ class TestChar(TaskTestCase):
 
         self.assertTrue(result)
         self.assertEqual(len(calls), 2)
+
+    def test_build_con_action_attacks_until_con_full(self):
+        class Task:
+            def __init__(self):
+                self.skip_combat_check = False
+
+            def sleep(self, *_args, **_kwargs):
+                pass
+
+            def get_current_con(self):
+                return 0
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.normal_chains = []
+
+            def continues_normal_attack(self, duration, interval=0.1, after_sleep=0,
+                                        click_resonance_if_ready_and_return=False, until_con_full=False):
+                self.normal_chains.append((duration, interval, until_con_full))
+                self.current_con = 1
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(char, TeamAction(name='build_con', duration=1.2, kwargs={'interval': 0.07}))
+
+        self.assertTrue(result)
+        self.assertEqual(char.normal_chains, [(1.2, 0.07, True)])
 
     def test_enhanced_resonance_requires_detector_when_requested(self):
         class Task:

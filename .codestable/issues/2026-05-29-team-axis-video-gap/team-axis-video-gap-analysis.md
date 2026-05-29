@@ -116,3 +116,27 @@ tags: [combat, team-axis, rotation]
 - 给 liberation 增加 `require_lib2`：R2 节点先等待 `lib2_available()`，没有 R2 图标时不点击解放。
 - 给 action 增加 `stop_on_fail`：爱弥斯 R2 失败时跳过后续 `E-2A-E` 尾段，直接按 step 的切人出口走，避免继续污染真实状态。
 - 爱弥斯“快速重击”改用 `execute`，优先走 `handle_heavy()`，保留角色已有的高亮重击 / pending lib2 处理。
+
+## 8. 四次实战复盘：协奏未满却强制标记变奏
+
+用户 2026-05-29 11:51 录制的实战日志显示，三次修复后爱弥斯段仍会从源头缺状态。关键证据是队伍轴在千咲切爱弥斯时使用 `free_intro=True`，但底层日志里的 `current_con=0`：
+
+| 日志信号 | 说明 |
+|---|---|
+| `switch request current=Chisa next=Aemeath free_intro=True` 紧接 `resolved_has_intro=True current_con=0` | 队伍轴把 `next_free_intro` 当成“强制有变奏”，绕过了真实协奏读取。 |
+| 爱弥斯入场后 `enhanced resonance unavailable` 连续失败 | 真实游戏没有变奏入场，因此 R1 / 1 链重击 / 强化 E 的前置状态不成立。 |
+| 达妮娅、千咲多个普攻段实测 elapsed 只有 0.5-0.8 秒 | 动作串没有打完整，协奏补不满，后续变奏链路自然断开。 |
+
+### 追加根因
+
+1. `BaseCombatTask._switch_intro_state(free_intro=True)` 会直接把 `has_intro` 置真，不再读取 `current_char.get_current_con()`。
+2. 队伍轴的 `next_free_intro` 语义不应等同于底层 `free_intro`，它表达的是“这个出口要求真实变奏”，需要先确认协奏已满。
+3. 爱达千 plan 没有 step 级“补协奏直到可变奏”的通用动作，达妮娅 / 千咲动作过短时只能继续错误推进。
+
+### 追加修复方案
+
+- `TeamRotationStep` 增加 `intro_actions`：当 step 标记 `next_free_intro=True` 但当前协奏未满时，先执行补协奏动作。
+- `TeamRotation.perform()` 在变奏出口前读取并记录真实协奏；未满则保持当前 step，不切人、不推进。
+- 真正切人时不再把 `next_free_intro` 透传为底层 `free_intro=True`，而是让 `switch_to_char(..., free_intro=False)` 重新读取协奏，只有真实满协奏才会得到 `has_intro=True`。
+- `TeamActionRunner` 增加 `build_con`，复用普通攻击并以 `until_con_full=True` 停止条件补满协奏。
+- 爱达千 plan 加长达妮娅 / 千咲普攻段，并在千咲、达妮娅、爱弥斯所有变奏出口追加 `build_con`。

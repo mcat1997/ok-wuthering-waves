@@ -24,7 +24,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             (
                 action('resonance', 'E', post_delay=0.35),
                 action('liberation', 'R', wait_if_cd_ready=0.4),
-                action('normal', '2A', count=2),
+                action('normal', '2A', count=2, interval=0.22, post_delay=0.1),
             ),
             next_char_cls=Chisa,
             label='达妮娅 E-R-2A',
@@ -33,21 +33,21 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Chisa,
             (
                 action('liberation', 'R'),
-                action('normal_chain', 'a3', duration=0.35),
+                action('normal_chain', 'a3', duration=0.55),
             ),
             next_char_cls=Denia,
             label='千咲 R-a3',
         ),
         TeamRotationStep(
             Denia,
-            (action('normal_chain', 'a3a4', duration=0.45),),
+            (action('normal_chain', 'a3a4', duration=0.85),),
             next_char_cls=Chisa,
             label='达妮娅 a3a4',
         ),
         TeamRotationStep(
             Chisa,
             (
-                action('normal_chain', 'a4a5', duration=0.55),
+                action('normal_chain', 'a4a5', duration=1.0),
                 action('echo', 'Q', post_delay=0.25),
                 action('enhanced_resonance', '强化E', pre_delay=0.15, post_delay=0.15,
                        time_out=0.4, force_on_fail=True, force_down_time=0.12),
@@ -58,7 +58,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Denia,
             (
-                action('normal', '2A', count=2, post_delay=0.25),
+                action('normal', '2A', count=2, interval=0.22, post_delay=0.25),
                 action('enhanced_resonance', '强化E', pre_delay=0.15, required=True,
                        attempts=2, retry_delay=0.25),
                 action('liberation', 'R2', wait_if_cd_ready=0.4, attempts=2, retry_delay=0.25),
@@ -69,12 +69,15 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('tap_normal_chain', '点按a2a3', duration=0.8),
+                action('tap_normal_chain', '点按a2a3', duration=1.1),
                 action('forte', '电锯终结', required=True, attempts=2, retry_delay=0.25),
             ),
             next_char_cls=Aemeath,
             next_free_intro=True,
             label='千咲 点按a2a3-电锯终结-变奏',
+            intro_actions=(
+                action('build_con', '补协奏到变奏', duration=2.4, interval=0.08),
+            ),
         ),
         TeamRotationStep(
             Aemeath,
@@ -100,6 +103,9 @@ class AemeathDeniaChisaRotation(TeamRotation):
             next_char_cls=Chisa,
             next_free_intro=True,
             label='爱弥斯 Q-a3a4-R1-重击-强化E-处决-a3a4-强化E-重击-R2-E-2A-E',
+            intro_actions=(
+                action('build_con', '补协奏到变奏', duration=1.8, interval=0.08),
+            ),
         ),
     )
 
@@ -108,7 +114,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Chisa,
             (
                 action('resonance', 'E'),
-                action('normal_chain', 'a3', duration=0.35),
+                action('normal_chain', 'a3', duration=0.55),
             ),
             next_char_cls=Denia,
             label='千咲 E-a3',
@@ -131,7 +137,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('normal_chain', 'a4a5', duration=0.55),
+                action('normal_chain', 'a4a5', duration=1.0),
                 action('echo', 'Q', post_delay=0.25),
             ),
             next_char_cls=Denia,
@@ -141,7 +147,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Denia,
             (
                 action('liberation', 'R', wait_if_cd_ready=0.4),
-                action('normal', '2A', count=2),
+                action('normal', '2A', count=2, interval=0.22, post_delay=0.1),
             ),
             next_char_cls=Chisa,
             label='达妮娅 R-2A',
@@ -168,17 +174,20 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('tap_normal_chain', '点按a2a3', duration=0.8),
+                action('tap_normal_chain', '点按a2a3', duration=1.1),
                 action('forte', '电锯终结', required=True, attempts=2, retry_delay=0.25),
             ),
             next_char_cls=Denia,
             next_free_intro=True,
             label='千咲 点按a2a3-电锯终结-变奏',
+            intro_actions=(
+                action('build_con', '补协奏到变奏', duration=2.4, interval=0.08),
+            ),
         ),
         TeamRotationStep(
             Denia,
             (
-                action('normal', '2A', count=2, post_delay=0.25),
+                action('normal', '2A', count=2, interval=0.22, post_delay=0.25),
                 action('enhanced_resonance', '强化E', pre_delay=0.15, required=True,
                        attempts=2, retry_delay=0.25),
                 action('liberation', 'R2', wait_if_cd_ready=0.4, attempts=2, retry_delay=0.25),
@@ -186,6 +195,9 @@ class AemeathDeniaChisaRotation(TeamRotation):
             next_char_cls=Aemeath,
             next_free_intro=True,
             label='达妮娅 2A-强化E-R2-变奏',
+            intro_actions=(
+                action('build_con', '补协奏到变奏', duration=2.2, interval=0.08),
+            ),
         ),
         TeamRotationStep(
             Aemeath,
@@ -211,5 +223,8 @@ class AemeathDeniaChisaRotation(TeamRotation):
             next_char_cls=Chisa,
             next_free_intro=True,
             label='爱弥斯 Q-a3a4-R1-重击-强化E-处决-a3a4-强化E-重击-R2-E-2A-E',
+            intro_actions=(
+                action('build_con', '补协奏到变奏', duration=1.8, interval=0.08),
+            ),
         ),
     )
