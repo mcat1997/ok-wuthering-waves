@@ -1012,6 +1012,42 @@ class TestChar(TaskTestCase):
         self.assertEqual(rotation.startup_index, 6)
         self.assertEqual(rotation.combat_start, task.combat_start)
 
+    def test_select_team_rotation_resets_after_sleep_check_not_in_combat(self):
+        class Task:
+            def __init__(self):
+                self.config = {'Use Team Axis': True, 'Team Axis Resume Window': 12}
+                self.char_config = {}
+                self.combat_start = time.time()
+                self.out_of_combat_reason = ''
+                self.chars = [
+                    Aemeath(self, 0),
+                    Denia(self, 1),
+                    Chisa(self, 2),
+                ]
+
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                if start < 0:
+                    return 10000
+                return time.time() - start
+
+            def find_one(self, *args, **kwargs):
+                return False
+
+        task = Task()
+        rotation = select_team_rotation(task)
+        rotation.startup_index = 7
+        rotation.action_index = 4
+        rotation.last_active_time = time.time() - 2
+
+        task.out_of_combat_reason = 'sleep check not in combat'
+        task.combat_start += 5
+
+        new_rotation = select_team_rotation(task)
+
+        self.assertIsNot(new_rotation, rotation)
+        self.assertEqual(new_rotation.startup_index, 0)
+        self.assertEqual(new_rotation.action_index, 0)
+
     def test_select_team_rotation_does_not_resume_after_non_transient_end(self):
         class Task:
             def __init__(self):
@@ -1419,6 +1455,40 @@ class TestChar(TaskTestCase):
         self.assertTrue(result)
         self.assertEqual(len(calls), 2)
 
+    def test_char_method_action_calls_role_state_method(self):
+        class Task:
+            pass
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.calls = []
+
+            def state_chain(self, value=0):
+                self.calls.append(value)
+                return value == 3
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(
+            char,
+            TeamAction(
+                name='char_method',
+                kwargs={
+                    'method': 'state_chain',
+                    'value': 3,
+                    'required': True,
+                    'attempts': 2,
+                    'stop_on_fail': True,
+                },
+            ),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(char.calls, [3])
+
     def test_build_con_action_attacks_until_con_full(self):
         class Task:
             def __init__(self):
@@ -1486,6 +1556,81 @@ class TestChar(TaskTestCase):
 
         self.assertTrue(result)
         self.assertEqual(char.normal_chains, [(1.2, 0.07, True, True)])
+
+    def test_build_forte_action_uses_forte_state_as_completion(self):
+        class Task:
+            def __init__(self):
+                self.skip_combat_check = False
+
+            def sleep(self, *_args, **_kwargs):
+                pass
+
+            def next_frame(self):
+                pass
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.clicks = 0
+
+            def is_forte_full(self):
+                return self.clicks >= 2
+
+            def resonance_available(self):
+                return False
+
+            def click(self, *args, **kwargs):
+                self.clicks += 1
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(char, TeamAction(name='build_forte', duration=1.0, kwargs={'interval': 0}))
+
+        self.assertTrue(result)
+        self.assertEqual(char.clicks, 2)
+
+    def test_forte_action_waits_ready_before_perform_forte(self):
+        class Task:
+            def __init__(self):
+                self.wait_kwargs = None
+
+            def wait_until(self, predicate, **kwargs):
+                self.wait_kwargs = kwargs
+                return predicate()
+
+        class Char(BaseChar):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.performed = 0
+
+            def is_forte_full(self):
+                return True
+
+            def click_with_interval(self, interval=0.1):
+                pass
+
+            def perform_forte(self):
+                self.performed += 1
+                return True
+
+        task = Task()
+        char = Char(task)
+        runner = TeamActionRunner(task)
+
+        result = runner.run(
+            char,
+            TeamAction(
+                name='forte',
+                kwargs={'wait_ready': True, 'wait_time': 0.8, 'tap_while_wait_ready': True},
+            ),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(char.performed, 1)
+        self.assertEqual(task.wait_kwargs['time_out'], 0.8)
+        self.assertTrue(callable(task.wait_kwargs['post_action']))
 
     def test_enhanced_resonance_requires_detector_when_requested(self):
         class Task:

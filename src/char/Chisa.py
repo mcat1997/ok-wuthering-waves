@@ -5,6 +5,35 @@ from src.char.BaseChar import BaseChar
 
 class Chisa(BaseChar):
 
+    def perform_forte_outro_chain(self, build_time=2.0, build_interval=0.08, tap_resonance=True):
+        if self.flying() and not self.liberation_available() and not self.resonance_available():
+            self.wait_down()
+        start = time.time()
+        resonance_clicks = 0
+        while time.time() - start < build_time and not self.is_forte_full():
+            if tap_resonance and self.resonance_available():
+                clicked = self.click_resonance(time_out=0.5)[0]
+                resonance_clicks += 1 if clicked else 0
+                if clicked:
+                    continue
+            self.click()
+            self.check_combat()
+            self.sleep(build_interval)
+            self.task.next_frame()
+        full_before_forte = self.is_forte_full()
+        if not full_before_forte:
+            self.logger.info(
+                f'chisa forte outro chain forte not full build_time={build_time} '
+                f'resonance_clicks={resonance_clicks}')
+            return False
+        result = self.perform_forte()
+        self.check_f_on_switch = False
+        con = self.get_current_con()
+        self.logger.info(
+            f'chisa forte outro chain result={result} con={con} '
+            f'build_time={build_time} resonance_clicks={resonance_clicks}')
+        return result
+
     def do_perform(self):
         if not self.task.char_config.get("Chisa DPS"):
             return self.do_fast_support()

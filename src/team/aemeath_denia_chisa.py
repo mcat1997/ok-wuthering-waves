@@ -10,6 +10,7 @@ def action(name, label='', count=0, duration=0, **kwargs):
 
 class AemeathDeniaChisaRotation(TeamRotation):
     name = '1C Aemeath / Denia / Chisa'
+    version = '2026-05-29-state-driven-v1'
     required_char_classes = (Aemeath, Denia, Chisa)
 
     startup_steps = (
@@ -50,7 +51,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
                 action('normal_chain', 'a4a5', duration=1.0),
                 action('echo', 'Q', post_delay=0.25),
                 action('enhanced_resonance', '强化E', pre_delay=0.15, post_delay=0.15,
-                       time_out=0.4, force_on_fail=True, force_down_time=0.12),
+                       time_out=0.8, required=True, attempts=2, retry_delay=0.2),
             ),
             next_char_cls=Denia,
             label='千咲 a4a5-Q-强化E',
@@ -59,9 +60,9 @@ class AemeathDeniaChisaRotation(TeamRotation):
             Denia,
             (
                 action('normal', '2A', count=2, interval=0.22, post_delay=0.25),
-                action('enhanced_resonance', '强化E', pre_delay=0.15, required=True,
-                       attempts=2, retry_delay=0.25),
-                action('raw_liberation', 'R2直按', down_time=0.05, post_sleep=0.25),
+                action('char_method', '强化E-R2-E状态链',
+                       method='perform_resonance_liberation_chain',
+                       required=True, attempts=3, retry_delay=0.2),
             ),
             next_char_cls=Chisa,
             label='达妮娅 2A-强化E-R2',
@@ -69,8 +70,10 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('tap_normal_chain', '点按a2a3', duration=1.1),
-                action('forte', '电锯终结', required=True, attempts=2, retry_delay=0.25),
+                action('char_method', '点按a2a3-电锯终结状态链',
+                       method='perform_forte_outro_chain', build_time=2.4,
+                       build_interval=0.08, tap_resonance=True,
+                       required=True, attempts=2, retry_delay=0.25),
             ),
             next_char_cls=Aemeath,
             next_free_intro=True,
@@ -78,6 +81,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             intro_actions=(
                 action('build_con', '补协奏到变奏', duration=2.4, interval=0.08),
             ),
+            intro_retry_limit=3,
         ),
         TeamRotationStep(
             Aemeath,
@@ -87,14 +91,15 @@ class AemeathDeniaChisaRotation(TeamRotation):
                 action('liberation', 'R1', pre_delay=0.15, wait_if_cd_ready=0.4,
                        required=True, attempts=2, retry_delay=0.25),
                 action('execute', '1链重击', duration=0.8, post_delay=0.35),
-                action('enhanced_resonance', '强化E', wait_time=1.6, require_available=True,
-                       tap_while_wait=True, resonance_while_wait=True, resonance_wait_interval=0.18,
-                       force_on_fail=True, force_down_time=0.05, force_post_sleep=0.25),
-                action('execute', '处决', post_delay=0.35),
+                action('char_method', '强化E-处决状态链',
+                       method='perform_enhanced_resonance', wait_time=1.6,
+                       tap_while_wait=True, resonance_while_wait=False,
+                       resonance_wait_interval=0.18, stop_on_fail=True),
                 action('normal_chain', 'a3a4', duration=0.45),
-                action('enhanced_resonance', '强化E', wait_time=1.6, require_available=True,
-                       tap_while_wait=True, resonance_while_wait=True, resonance_wait_interval=0.18,
-                       force_on_fail=True, force_down_time=0.05, force_post_sleep=0.25),
+                action('char_method', '强化E-处决状态链',
+                       method='perform_enhanced_resonance', wait_time=1.6,
+                       tap_while_wait=True, resonance_while_wait=False,
+                       resonance_wait_interval=0.18, stop_on_fail=True),
                 action('execute', '快速重击', duration=0.45, post_delay=0.25),
                 action('liberation', 'R2', wait_if_cd_ready=0.4, attempts=2, retry_delay=0.25,
                        wait_time=2.0, require_lib2=True, stop_on_fail=True),
@@ -103,11 +108,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
                 action('resonance', 'E'),
             ),
             next_char_cls=Chisa,
-            next_free_intro=True,
             label='爱弥斯 Q-a3a4-R1-重击-强化E-处决-a3a4-强化E-重击-R2-E-2A-E',
-            intro_actions=(
-                action('build_con', '补协奏到变奏', duration=1.8, interval=0.08),
-            ),
         ),
     )
 
@@ -159,7 +160,7 @@ class AemeathDeniaChisaRotation(TeamRotation):
             (
                 action('liberation', 'R', wait_if_cd_ready=0.4, attempts=2, retry_delay=0.25),
                 action('enhanced_resonance', '强化E', pre_delay=0.15, post_delay=0.15,
-                       time_out=0.4, force_on_fail=True, force_down_time=0.12),
+                       time_out=0.8, required=True, attempts=2, retry_delay=0.2),
             ),
             next_char_cls=Aemeath,
             label='千咲 R-强化E',
@@ -176,8 +177,10 @@ class AemeathDeniaChisaRotation(TeamRotation):
         TeamRotationStep(
             Chisa,
             (
-                action('tap_normal_chain', '点按a2a3', duration=1.1),
-                action('forte', '电锯终结', required=True, attempts=2, retry_delay=0.25),
+                action('char_method', '点按a2a3-电锯终结状态链',
+                       method='perform_forte_outro_chain', build_time=2.4,
+                       build_interval=0.08, tap_resonance=True,
+                       required=True, attempts=2, retry_delay=0.25),
             ),
             next_char_cls=Denia,
             next_free_intro=True,
@@ -185,14 +188,15 @@ class AemeathDeniaChisaRotation(TeamRotation):
             intro_actions=(
                 action('build_con', '补协奏到变奏', duration=2.4, interval=0.08),
             ),
+            intro_retry_limit=3,
         ),
         TeamRotationStep(
             Denia,
             (
                 action('normal', '2A', count=2, interval=0.22, post_delay=0.25),
-                action('enhanced_resonance', '强化E', pre_delay=0.15, required=True,
-                       attempts=2, retry_delay=0.25),
-                action('raw_liberation', 'R2直按', down_time=0.05, post_sleep=0.25),
+                action('char_method', '强化E-R2-E状态链',
+                       method='perform_resonance_liberation_chain',
+                       required=True, attempts=3, retry_delay=0.2),
             ),
             next_char_cls=Aemeath,
             next_free_intro=True,
@@ -211,14 +215,15 @@ class AemeathDeniaChisaRotation(TeamRotation):
                 action('liberation', 'R1', pre_delay=0.15, wait_if_cd_ready=0.4,
                        required=True, attempts=2, retry_delay=0.25),
                 action('execute', '1链重击', duration=0.8, post_delay=0.35),
-                action('enhanced_resonance', '强化E', wait_time=1.6, require_available=True,
-                       tap_while_wait=True, resonance_while_wait=True, resonance_wait_interval=0.18,
-                       force_on_fail=True, force_down_time=0.05, force_post_sleep=0.25),
-                action('execute', '处决', post_delay=0.35),
+                action('char_method', '强化E-处决状态链',
+                       method='perform_enhanced_resonance', wait_time=1.6,
+                       tap_while_wait=True, resonance_while_wait=False,
+                       resonance_wait_interval=0.18, stop_on_fail=True),
                 action('normal_chain', 'a3a4', duration=0.45),
-                action('enhanced_resonance', '强化E', wait_time=1.6, require_available=True,
-                       tap_while_wait=True, resonance_while_wait=True, resonance_wait_interval=0.18,
-                       force_on_fail=True, force_down_time=0.05, force_post_sleep=0.25),
+                action('char_method', '强化E-处决状态链',
+                       method='perform_enhanced_resonance', wait_time=1.6,
+                       tap_while_wait=True, resonance_while_wait=False,
+                       resonance_wait_interval=0.18, stop_on_fail=True),
                 action('execute', '快速重击', duration=0.45, post_delay=0.25),
                 action('liberation', 'R2', wait_if_cd_ready=0.4, attempts=2, retry_delay=0.25,
                        wait_time=2.0, require_lib2=True, stop_on_fail=True),
@@ -227,10 +232,6 @@ class AemeathDeniaChisaRotation(TeamRotation):
                 action('resonance', 'E'),
             ),
             next_char_cls=Chisa,
-            next_free_intro=True,
             label='爱弥斯 Q-a3a4-R1-重击-强化E-处决-a3a4-强化E-重击-R2-E-2A-E',
-            intro_actions=(
-                action('build_con', '补协奏到变奏', duration=1.8, interval=0.08),
-            ),
         ),
     )

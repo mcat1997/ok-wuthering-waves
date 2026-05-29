@@ -89,6 +89,38 @@ tags: [combat, team-axis, rotation]
 - 定向 `unittest` 仍被当前环境缺少 `ok` 依赖挡在导入阶段：`ModuleNotFoundError: No module named 'ok'`。
 - 本地最小脚本第一次直接导入时还暴露当前环境缺少 `cv2`，已通过模块桩隔离队伍轴逻辑验证；这属于测试环境依赖缺失，不影响 `py_compile`。
 
+## 六次修复内容
+
+- 根据 2026-05-29 16:11 实战日志确认五次修复变差的根因：爱弥斯长段中 `sleep check not in combat` 后继续旧 step，随后强化 E 检测失败被 `force_on_fail` 当成功推进，最后在爱弥斯出口要求满协奏切千咲，导致 `current_con=0` 时无限 `build_con`。
+- `TeamRotation` 不再把 `sleep check not in combat` 当成可安全恢复的短暂中断；这类长动作中断会重置队伍轴，避免从爱弥斯长段中间续跑。
+- 爱弥斯两段强化 E 移除 `force_on_fail`，保留 `tap_while_wait` / `resonance_while_wait`，但检测不到时通过 `stop_on_fail` 退出当前 step，不再把普通 E 或无效按键记作强化 E 成功。
+- 爱弥斯 startup / loop 出口取消 `next_free_intro=True` 和 `build_con`，正常切千咲；真实协奏满时底层仍会自然给入场，未满时不会卡死。
+- 补充单测覆盖：`sleep check not in combat` 会重建 rotation，不再恢复旧 step/action。
+
+### 六次修复验证
+
+- `python -m py_compile src/team/__init__.py src/team/TeamRotation.py src/team/aemeath_denia_chisa.py src/task/AutoCombatTask.py src/task/BaseCombatTask.py tests/TestChar.py` 通过。
+- `git diff --check` 通过。
+- `python .codestable/tools/validate-yaml.py --dir .codestable/issues/2026-05-29-team-axis-video-gap` 通过。
+
+## 七次修复内容
+
+- 根据 2026-05-29 16:29 实战日志确认继续调固定时间轴不可行：日志仍有旧版爱弥斯出口 `intro-build`，同时达妮娅 `raw_liberation` 出现“按键成功但协奏仍为 0”的假成功。
+- `TeamRotation` 初始化日志增加 `version` 和 `module`，下一次实战日志可以直接确认是否加载到 `2026-05-29-state-driven-v1`。
+- `TeamActionRunner` 新增通用 `char_method`，队伍轴可以调用角色自己的状态链方法；通用 `required` / `attempts` / `stop_on_fail` 等控制参数不会透传给角色方法。
+- `TeamActionRunner` 新增 `build_forte`，并让 `forte` 支持 `wait_ready`，为后续队伍轴提供“等角色回路满再推进”的通用动作完成态。
+- `Chisa` 新增 `perform_forte_outro_chain()`：先补/检测 `is_forte_full()`，再执行 `perform_forte()` 并记录协奏，替代固定 `点按a2a3` 时间。
+- `Denia` 新增 `perform_resonance_liberation_chain()`：按角色脚本的 `E -> R -> E` 思路复用 `click_resonance()` / `click_liberation()` 的完成检测，替代 `raw_liberation` 裸按。
+- `Aemeath` 新增 `perform_enhanced_resonance()`：复用 `enhance_e_available()`、带动画的 `click_resonance()`、`record_enhance_e()` 和 `f_break()`，让强化 E / 处决由角色状态判断。
+- 爱弥斯等待强化 E 时只用普攻推进状态，不再周期性盲点 E；千咲强化 E 也移除 `force_on_fail`，避免把检测失败记录成成功。
+- 爱达千轴关键段改为 `char_method`：达妮娅合轴段、千咲电锯段、爱弥斯强化 E 段都不再靠固定时间硬推进。
+
+### 七次修复验证
+
+- `python -m py_compile src/team/TeamRotation.py src/team/aemeath_denia_chisa.py src/char/Aemeath.py src/char/Chisa.py src/char/Denia.py tests/TestChar.py` 通过。
+- `git diff --check` 通过。
+- 定向 `unittest` 在当前环境仍无法导入：`ModuleNotFoundError: No module named 'ok'`；`python -m pip show ok-script` 也确认当前解释器未安装 `ok-script`。
+
 ## 已知限制
 
 - 本次修复无法在本地直接复现实机战斗，只能基于用户提供的实战日志、实战视频和教学视频定位并修正明显偏差。

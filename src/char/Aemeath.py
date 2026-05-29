@@ -155,6 +155,40 @@ class Aemeath(BaseChar):
                 self.click()
             self.cycle_sleep()
 
+    def perform_enhanced_resonance(self, wait_time=1.6, tap_while_wait=True, resonance_while_wait=False,
+                                   resonance_wait_interval=0.18):
+        last_resonance_key_time = [0.0]
+
+        def post_action():
+            if tap_while_wait:
+                self.click_with_interval(0.1)
+            if resonance_while_wait:
+                now = time.time()
+                if now - last_resonance_key_time[0] >= resonance_wait_interval:
+                    self.send_resonance_key(down_time=0.01)
+                    last_resonance_key_time[0] = now
+
+        ready = self.task.wait_until(
+            self.enhance_e_available,
+            time_out=wait_time,
+            raise_if_not_found=False,
+            post_action=post_action if tap_while_wait or resonance_while_wait else None,
+        )
+        self.logger.info(
+            f'aemeath enhanced resonance wait ready={ready} wait_time={wait_time} '
+            f'tap_while_wait={tap_while_wait} resonance_while_wait={resonance_while_wait}')
+        if not ready:
+            return False
+        result = self.click_resonance(has_animation=True, send_click=True, animation_min_duration=0.5,
+                                      time_out=1.5)
+        if result[0]:
+            self.record_enhance_e()
+            self.click_echo(time_out=0)
+            self.f_break()
+            self.task.next_frame()
+        self.logger.info(f'aemeath enhanced resonance result={result}')
+        return result[0]
+
     def lib_cd_eminent(self):
         cd = self.task.get_cd('liberation')
         return self.lib1_unlocked() and (0 < cd < 1.5 or self.liberation_available())

@@ -27,13 +27,24 @@ _ACTION_META_KEYS = (
     'resonance_wait_interval',
     'resonance_wait_down_time',
     'click_resonance_if_ready',
+    'wait_ready',
+    'tap_while_wait_ready',
+    'method',
 )
 _ACTION_META_KEY_SET = set(_ACTION_META_KEYS)
+_CHAR_METHOD_CONTROL_KEYS = {
+    'pre_delay',
+    'post_delay',
+    'attempts',
+    'retry_delay',
+    'required',
+    'stop_on_fail',
+    'method',
+}
 
 _TRANSIENT_OUT_OF_COMBAT_REASONS = (
     'target enemy failed',
     'combat check not in combat',
-    'sleep check not in combat',
     'not in_team while switching',
     'failed switch chars',
 )
@@ -183,6 +194,24 @@ class TeamActionRunner:
     def _run_wait(self, char: BaseChar, action: TeamAction):
         char.sleep(action.duration)
 
+    def _run_char_method(self, char: BaseChar, action: TeamAction):
+        method_name = action.kwargs.get('method')
+        method = getattr(char, method_name or '', None)
+        if not callable(method):
+            logger.warning(
+                f'team action char method missing char={char} action={_action_label(action)} '
+                f'method={method_name}')
+            return False
+        kwargs = {key: value for key, value in action.kwargs.items() if key not in _CHAR_METHOD_CONTROL_KEYS}
+        logger.info(
+            f'team action char method start char={char} action={_action_label(action)} '
+            f'method={method_name} kwargs={kwargs}')
+        result = method(**kwargs)
+        logger.info(
+            f'team action char method end char={char} action={_action_label(action)} '
+            f'method={method_name} result={_short_value(result)}')
+        return result
+
     def _run_normal(self, char: BaseChar, action: TeamAction):
         count = action.count if action.count > 0 else 1
         interval = action.kwargs.get('interval', 0.12)
@@ -220,6 +249,39 @@ class TeamActionRunner:
             f'click_resonance_if_ready={click_resonance_if_ready} '
             f'start_con={start_con} end_con={end_con}')
         return end_con == 1
+
+    def _run_build_forte(self, char: BaseChar, action: TeamAction):
+        duration = action.duration if action.duration > 0 else action.kwargs.get('time_out', 2.0)
+        interval = action.kwargs.get('interval', 0.08)
+        click_resonance_if_ready = action.kwargs.get('click_resonance_if_ready', False)
+        start_full = char.is_forte_full()
+        if start_full:
+            logger.info(f'team action build forte already full char={char}')
+            return True
+        start = time.time()
+        resonance_clicks = 0
+        while time.time() - start < duration:
+            if char.is_forte_full():
+                logger.info(
+                    f'team action build forte end char={char} duration={time.time() - start:.2f}s '
+                    f'interval={interval}s click_resonance_if_ready={click_resonance_if_ready} '
+                    f'resonance_clicks={resonance_clicks} end_full=True')
+                return True
+            if click_resonance_if_ready and char.resonance_available():
+                clicked = char.click_resonance(time_out=0.5)[0]
+                resonance_clicks += 1 if clicked else 0
+            else:
+                char.click()
+                char.sleep(interval)
+            next_frame = getattr(self.task, 'next_frame', None)
+            if callable(next_frame):
+                next_frame()
+        end_full = char.is_forte_full()
+        logger.info(
+            f'team action build forte end char={char} duration={duration}s interval={interval}s '
+            f'click_resonance_if_ready={click_resonance_if_ready} '
+            f'resonance_clicks={resonance_clicks} start_full={start_full} end_full={end_full}')
+        return end_full
 
     def _run_resonance(self, char: BaseChar, action: TeamAction):
         kwargs = {'time_out': action.kwargs.get('time_out', 1)}
@@ -340,10 +402,27 @@ class TeamActionRunner:
         return char.heavy_attack(duration)
 
     def _run_forte(self, char: BaseChar, action: TeamAction):
+        if action.kwargs.get('wait_ready', False):
+            wait_time = action.kwargs.get('wait_time', 1.0)
+            post_action = char.click_with_interval if action.kwargs.get('tap_while_wait_ready', False) else None
+            ready = self.task.wait_until(char.is_forte_full, time_out=wait_time,
+                                         raise_if_not_found=False, post_action=post_action)
+            logger.info(
+                f'team action forte wait ready char={char} timeout={wait_time}s '
+                f'tap_while_wait_ready={action.kwargs.get("tap_while_wait_ready", False)} result={ready}')
+            if not ready:
+                return False
+        before_full = char.is_forte_full()
         perform_forte = getattr(char, 'perform_forte', None)
         if callable(perform_forte):
-            return perform_forte()
-        return char.heavy_click_forte(char.is_forte_full)
+            result = perform_forte()
+        else:
+            result = char.heavy_click_forte(char.is_forte_full)
+        after_full = char.is_forte_full()
+        logger.info(
+            f'team action forte end char={char} before_full={before_full} '
+            f'after_full={after_full} result={_short_value(result)}')
+        return result
 
     def _run_f_break(self, char: BaseChar, action: TeamAction):
         return char.f_break()
@@ -366,7 +445,8 @@ class TeamRotation:
         self.startup_done = False
         self.last_active_time = time.time()
         logger.info(
-            f'{self.name} init combat_start={self.combat_start} '
+            f'{self.name} init version={getattr(self, "version", "unversioned")} '
+            f'module={self.__class__.__module__} combat_start={self.combat_start} '
             f'team={_team_signature(getattr(task, "chars", []))} '
             f'startup_steps={len(self.startup_steps)} loop_steps={len(self.loop_steps)}')
 

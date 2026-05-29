@@ -164,3 +164,50 @@ tags: [combat, team-axis, rotation]
 - `enhanced_resonance` 在 `require_available=True` 且等待超时时支持 `force_on_fail`：兜底发一次 E 键并返回成功，避免 required failure 触发角色轴反复抢控制。
 - 达妮娅变奏出口的 `build_con` 支持 `click_resonance_if_ready=True` 并延长到 3 秒；若 R2 或普攻节奏仍不稳定，队伍轴会先补真实协奏而不是 fake intro。
 - 给达妮娅变奏出口设置有限 `intro_retry_limit=2`，避免极端场景无限补协奏卡住。
+
+## 10. 六次实战复盘：爱弥斯出口协奏要求导致卡死
+
+用户 2026-05-29 16:11 录制的实战日志显示，五次修复引入了更差的恢复路径：
+
+| 时间点 | 日志信号 | 结论 |
+|---|---|---|
+| 视频前一轮，16:11:45 | 爱弥斯 `1链重击` 因 `sleep check not in combat` 中断 | 这类中断发生在主 C 长段内部，真实状态已不可可靠续跑。 |
+| 视频 t≈5.35s | `resumed team rotation ... step=startup 8/8` 且 `resume within step action_index=4/13` | 队伍轴从爱弥斯长段中间恢复，保留了已经污染的动作状态。 |
+| 视频 t≈8.38s / t≈12.28s | 两次 `enhanced resonance unavailable` 后 `force enhanced resonance key after unavailable` 并记录 success | 五次修复把检测不到的强化 E 仍当作成功推进，造成假成功。 |
+| 视频 t≈17.63s 起 | 爱弥斯 R2 未就绪后 `stop_on_fail`，随后 `intro readiness ... current_con=0`，之后反复 `build con end ... end_con=0` | 爱弥斯出口被配置成必须变奏切千咲，但当前协奏为 0，形成无限补协奏卡死。 |
+
+### 追加根因
+
+1. `sleep check not in combat` 不是可安全恢复的短暂丢目标；发生在长动作里时，继续旧 step 会从错误动作状态接着跑。
+2. 爱弥斯强化 E 的 `force_on_fail` 在 `require_available=True` 超时后仍返回成功，掩盖了关键状态缺失。
+3. 爱弥斯出口 `next_free_intro=True + build_con` 对这个轴不成立：爱弥斯 R2/强化 E 未完整时协奏可能为 0，强制等满只会卡死。
+
+### 追加修复方案
+
+- 从可恢复 out-of-combat 原因中移除 `sleep check not in combat`，这类中断后重新建队伍轴，不从爱弥斯长段中间恢复。
+- 爱弥斯两段强化 E 不再 `force_on_fail`，检测超时后通过 `stop_on_fail` 跳出当前 step，避免假成功继续跑处决/R2。
+- 爱弥斯 step 出口不再声明 `next_free_intro=True`，允许正常切千咲；如果真实协奏已满，底层仍会自然给入场，否则不再无限补协奏卡住。
+
+## 11. 七次实战复盘：固定时间轴没有等待角色状态完成
+
+用户 2026-05-29 16:29 录制的实战日志显示，当前失败不能继续靠固定时长微调解决：
+
+| 日志信号 | 结论 |
+|---|---|
+| 实战日志仍出现 `Aemeath startup 8/8 intro-build` 和 `require_intro=True` | 运行版本存在滞后风险，必须在队伍轴初始化日志里输出版本号和模块，确认实战实际加载的是哪版源码。 |
+| 达妮娅 `raw_liberation R2直按` 返回成功，但切千咲时 `current_con=0` | 裸按 R 只能证明按键发出，不能证明达妮娅二段 R 动作完成，也不能作为推进条件。 |
+| 千咲电锯后连续多轮 `build_con end_con=0`，直到多次补协奏后才满 | `点按a2a3` 固定 1.1 秒不足以表达“千咲回路已满并完成电锯”，需要先检测 `is_forte_full()` 再执行 `perform_forte()`。 |
+| 爱弥斯强化 E 等待期间仍可能长时间无有效动作 | 爱弥斯段应该复用 `Aemeath` 角色脚本里的 `enhance_e_available()`、带动画的 `click_resonance()`、`handle_heavy()` 和 `lib2_available()`，而不是只按固定 E / 重击 / R。 |
+
+### 追加根因
+
+队伍轴把“教学视频里的动作名称”翻译成了“固定时间按键序列”，但角色脚本本身已经有动作完成态：技能是否可用、动画是否触发、回路是否满、长动作是否结束、二段 R 是否出现。缺失这些完成态会造成三类假象：按键已发但动作未出、动作未完成就切下一步、状态没满足却继续后续依赖动作。
+
+### 追加修复方案
+
+- 队伍轴初始化日志输出 `version` 和 `module`，下一轮日志能直接判断实战是否加载到当前源码。
+- 增加通用 `char_method` action，让队伍轴可以调用角色自己的状态机方法，只由角色脚本判断动作是否完成。
+- 保留通用 `build_forte` / `forte wait_ready` 能力，用于后续其他队伍轴复用回路完成态。
+- 千咲新增 `perform_forte_outro_chain()`：先检测/补满 `is_forte_full()`，再执行 `perform_forte()`，不再固定 1.1 秒后硬开电锯。
+- 达妮娅新增 `perform_resonance_liberation_chain()`：复用 `click_resonance()` / `click_liberation()` / 后续 `click_resonance()` 的完成检测，不再使用 `raw_liberation` 裸按假成功。
+- 爱弥斯新增 `perform_enhanced_resonance()`：复用 `enhance_e_available()`、带动画的 `click_resonance()`、`record_enhance_e()` 和 `f_break()`，让强化 E / 处决由角色状态推进。
