@@ -33,6 +33,13 @@ class Cartethyia(BaseChar):
         target_box.height = int(h * 0.6)
         self.sword3_half_box = target_box
 
+        template = self.task.get_feature_by_name('forte_cartethyia_sword2')
+        h = template.mat.shape[0]
+        self.sword2_half_mat = template.mat[:int(h * 0.5)]
+        target_box = self.task.get_box_by_name('forte_cartethyia_sword2')
+        target_box.height = int(h * 0.6)
+        self.sword2_half_box = target_box
+
     def on_combat_end(self, chars):
         if not self.is_cartethyia:
             next_char = str((self.index + 1) % len(chars) + 1)
@@ -145,11 +152,7 @@ class Cartethyia(BaseChar):
         return clicked
 
     def _sword2_half_feature(self):
-        template = self.task.get_feature_by_name('forte_cartethyia_sword2')
-        h = template.mat.shape[0]
-        box = self.task.get_box_by_name('forte_cartethyia_sword2')
-        box.height = int(h * 0.6)
-        return template.mat[:int(h * 0.5)], box
+        return self.sword2_half_mat, self.sword2_half_box
 
     def acquire_sword2(self):
         """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
@@ -158,9 +161,11 @@ class Cartethyia(BaseChar):
         if try_once := bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85)):
             time_out = 2 if not self.is_first_engage() else 2.5
         interrupt_handled = False
+        detected = False
         start = time.time()
         while time.time() - start < time_out:
             if not try_once and self.task.find_one(template=half_mat, box=half_box, threshold=0.85):
+                detected = True
                 break
             if not interrupt_handled and self.flying():
                 time_out = 2.5 if time_out == 2 else time_out
@@ -170,7 +175,8 @@ class Cartethyia(BaseChar):
             self.click(interval=0.1, after_sleep=0.01)
             self.check_combat()
             self.task.next_frame()
-        self.logger.debug(f'sword2: click duration {time.time() - start}')
+        self.logger.info(
+            f'sword2: click duration {time.time() - start:.3f}s detected={detected}')
         return True
 
     def perform_team_opening(self):
@@ -183,16 +189,9 @@ class Cartethyia(BaseChar):
 
         self.logger.info('cartethyia team opening send second liberation to return to small form')
         self.send_liberation_key()
-        settled = self.task.wait_until(
-            self.is_small,
-            post_action=self.click_with_interval,
-            time_out=2.5,
-            raise_if_not_found=False,
-        )
-        if not settled:
-            self.logger.warning('cartethyia small form was not confirmed after opening second liberation')
         self.is_cartethyia = True
         self.transform = False
+        self.click(interval=0.1, after_sleep=0.01)
         return self.acquire_sword2()
 
     def perform_team_resonance_switch(self):

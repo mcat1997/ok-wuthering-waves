@@ -75,10 +75,7 @@ class TestTeamRotation(unittest.TestCase):
                 pass
 
         class Task:
-            def wait_until(self, condition, post_action=None, **_kwargs):
-                if post_action:
-                    post_action()
-                return condition()
+            pass
 
         actions = []
         cartethyia = object.__new__(Cartethyia)
@@ -89,7 +86,7 @@ class TestTeamRotation(unittest.TestCase):
         cartethyia.is_small = lambda: True
         cartethyia.click_liberation = lambda **_kwargs: actions.append('R1') or True
         cartethyia.send_liberation_key = lambda **_kwargs: actions.append('R2')
-        cartethyia.click_with_interval = lambda: actions.append('A-during-R2')
+        cartethyia.click = lambda **_kwargs: actions.append('A-during-R2')
         cartethyia.acquire_sword2 = lambda: actions.append('A-until-N4') or True
 
         self.assertTrue(cartethyia.perform_team_opening())
@@ -111,7 +108,7 @@ class TestTeamRotation(unittest.TestCase):
         self.assertTrue(ciaccona.perform_plunge_normal_forte())
         self.assertEqual(actions, ['plunge', 'normal'])
 
-    def test_aero_rover_takeoff_does_not_insert_a_ground_normal(self):
+    def test_aero_rover_takeoff_sends_e_before_first_normal(self):
         class Task:
             def next_frame(self):
                 pass
@@ -125,7 +122,7 @@ class TestTeamRotation(unittest.TestCase):
         rover.click = lambda **_kwargs: actions.append('ground-normal')
 
         self.assertTrue(rover.wind_routine_take_off())
-        self.assertEqual(actions, ['E', 'record-E'])
+        self.assertEqual(actions, ['E', 'record-E', 'ground-normal'])
 
     def test_aero_rover_confirms_second_takeoff_after_liberation(self):
         class Task:
@@ -133,6 +130,9 @@ class TestTeamRotation(unittest.TestCase):
 
         actions = []
         rover = HavocRover(Task(), 0, ring_index=Elements.WIND)
+        rover.send_resonance_key = lambda **_kwargs: actions.append('immediate-E')
+        rover.record_resonance_use = lambda: None
+        rover.click = lambda **_kwargs: actions.append('immediate-A')
         rover.init = lambda: None
         rover.wind_routine_take_off = lambda: actions.append('E-takeoff') or True
         rover.wind_routine_click_while_flying = (
@@ -140,7 +140,8 @@ class TestTeamRotation(unittest.TestCase):
         rover.click_liberation = lambda **_kwargs: actions.append('R') or True
 
         self.assertTrue(rover.perform_team_aero_air_combo(use_liberation=True))
-        self.assertEqual(actions, ['E-takeoff', '3A', 'R', 'E-takeoff'])
+        self.assertEqual(
+            actions, ['immediate-E', 'immediate-A', 'E-takeoff', '3A', 'R', 'E-takeoff'])
 
     def test_cartethyia_team_requires_aero_rover_when_form_is_known(self):
         chars = [
