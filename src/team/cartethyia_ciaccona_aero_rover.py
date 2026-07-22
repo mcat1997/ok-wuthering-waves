@@ -5,14 +5,13 @@ from src.char.HavocRover import HavocRover
 from src.team.TeamRotation import TeamRotation, TeamRotationStep
 
 
-def step(char_cls, method=None, next_char_cls=None, label='', fallback_on_fail=False, **kwargs):
+def step(char_cls, method=None, next_char_cls=None, label='', **kwargs):
     return TeamRotationStep(
         char_cls,
         method=method,
         next_char_cls=next_char_cls,
         label=label,
         kwargs=kwargs,
-        fallback_on_fail=fallback_on_fail,
     )
 
 
@@ -40,7 +39,6 @@ class CartethyiaCiacconaAeroRoverRotation(TeamRotation):
             next_char_cls=Ciaccona,
             label='气动漂泊者 E-空中3A+声骸',
             use_echo=True,
-            fallback_on_fail=True,
         ),
         step(
             Ciaccona,
@@ -55,7 +53,6 @@ class CartethyiaCiacconaAeroRoverRotation(TeamRotation):
             next_char_cls=Cartethyia,
             label='气动漂泊者 E-空中3A-R-E',
             use_liberation=True,
-            fallback_on_fail=True,
         ),
         step(
             Cartethyia,

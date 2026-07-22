@@ -82,7 +82,8 @@ class Ciaccona(BaseChar):
         """下落攻击接落地普攻，供角色手法与队伍手法共同构建回路。"""
         self.click_jump_with_click(0.4)
         self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
-        self.continues_normal_attack(0.2)
+        self.click(interval=0.1)
+        self.task.next_frame()
         return True
 
     def continues_click_a(self, duration=0.6):
@@ -175,7 +176,8 @@ class Ciaccona(BaseChar):
     def perform_team_plunge_forte(self, use_resonance=False):
         self.perform_plunge_normal_forte()
         if use_resonance:
-            return self.click_resonance(send_click=False, time_out=0.8)[0]
+            self.send_resonance_key()
+            self.record_resonance_use()
         return True
 
     def perform_team_forte_echo_liberation(self):

@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -15,7 +16,6 @@ class TeamRotationStep:
     next_char_cls: type[BaseChar] | None = None
     label: str = ''
     kwargs: dict[str, Any] = field(default_factory=dict)
-    fallback_on_fail: bool = False
 
 
 class TeamRotation:
@@ -52,43 +52,74 @@ class TeamRotation:
         current = self.task.get_current_char(raise_exception=False)
         if current is None:
             return False
-        self.task.switch_to_char(current, target)
-        return target.is_current_char
+        return self.switch_immediately(current, target)
+
+    def switch_immediately(self, current, target):
+        """在合轴点立即发送切人，只等待目标角色位实际生效。"""
+        if target.is_current_char:
+            return True
+
+        start = time.time()
+        last_send = start
+        self.task.send_key(target.index + 1)
+        while time.time() - start < self.task.switch_char_time_out:
+            in_team, current_index, _ = self.task.in_team()
+            if in_team and current_index == target.index:
+                self.task.in_liberation = False
+                current.switch_out(con_full=False)
+                target.has_intro = False
+                target.has_sub_dps_intro = False
+                target.is_current_char = True
+                target.last_switch_in_time = time.time()
+                logger.info(
+                    f'{self.name} immediate switch {current} -> {target} '
+                    f'end {target.last_switch_in_time - start:.3f}s')
+                return True
+
+            now = time.time()
+            if now - last_send > 0.1:
+                self.task.send_key(target.index + 1)
+                last_send = now
+            self.task.next_frame()
+
+        logger.warning(f'{self.name} immediate switch failed {current} -> {target}')
+        return False
+
+    def fail_step(self, step, reason):
+        self.disabled = True
+        logger.warning(f'{self.name} disabled at step: {step.label}; reason={reason}')
+        self.task.check_combat()
+        return False
 
     def perform(self):
         if self.disabled or not self.steps:
             return False
-        step = self.steps[self.step_index]
-        char = self.char(step.char_cls)
-        if char is None or not self.ensure_current_char(char):
-            logger.warning(f'{self.name} can not align step {self.step_index}: {step.label}')
-            return False
 
-        logger.info(
-            f'{self.name} step {self.step_index + 1}/{len(self.steps)} start '
-            f'label={step.label or step.char_cls.__name__}')
-        if step.method:
-            method = getattr(char, step.method, None)
-            if not callable(method):
-                logger.warning(f'{self.name} missing method char={char} method={step.method}')
-                return False
-            result = method(**step.kwargs)
-            if result is False:
-                if step.fallback_on_fail:
-                    self.disabled = True
-                    logger.warning(f'{self.name} disabled after step failure: {step.label}')
-                    return False
-                logger.warning(f'{self.name} holds failed step: {step.label}')
-                return True
+        for _ in range(len(self.steps)):
+            step = self.steps[self.step_index]
+            char = self.char(step.char_cls)
+            if char is None or not self.ensure_current_char(char):
+                return self.fail_step(step, 'can not align current character')
 
-        if step.next_char_cls is not None:
-            next_char = self.char(step.next_char_cls)
-            if next_char is None:
-                return False
-            self.task.switch_to_char(char, next_char)
+            logger.info(
+                f'{self.name} step {self.step_index + 1}/{len(self.steps)} start '
+                f'label={step.label or step.char_cls.__name__}')
+            if step.method:
+                method = getattr(char, step.method, None)
+                if not callable(method):
+                    return self.fail_step(step, f'missing method {step.method}')
+                if method(**step.kwargs) is False:
+                    return self.fail_step(step, 'action failed')
 
-        self.step_index = (self.step_index + 1) % len(self.steps)
-        logger.info(f'{self.name} step end next_step={self.step_index + 1}/{len(self.steps)}')
+            if step.next_char_cls is not None:
+                next_char = self.char(step.next_char_cls)
+                if next_char is None:
+                    return self.fail_step(step, 'next character not found')
+                if not self.switch_immediately(char, next_char):
+                    return self.fail_step(step, 'switch failed')
+
+            self.step_index = (self.step_index + 1) % len(self.steps)
+            logger.info(f'{self.name} step end next_step={self.step_index + 1}/{len(self.steps)}')
         return True
 
 

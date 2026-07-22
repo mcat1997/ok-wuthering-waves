@@ -181,27 +181,20 @@ class Cartethyia(BaseChar):
             self.is_cartethyia = False
             self.transform = True
 
-        # 先确认形态切换完成，避免过早输入被动画吞掉或提前污染剑二合轴检测。
         self.logger.info('cartethyia team opening send second liberation to return to small form')
         self.send_liberation_key()
-        settled = self.task.wait_until(
-            self.is_small,
-            time_out=2.5,
-            raise_if_not_found=False,
-        )
-        if not settled:
-            self.logger.warning('cartethyia small form was not confirmed after opening second liberation')
         self.is_cartethyia = True
         self.transform = False
 
-        # 保证首个普攻已发送，再沿用角色原有的声骸释放入口。
-        self.task.click(after_sleep=0.1)
+        self.task.click()
         self.click_echo(time_out=0)
         return self.acquire_sword2()
 
     def perform_team_resonance_switch(self):
-        """确认 E 已按下后立即交由队伍轴切人。"""
-        return self.click_resonance(send_click=False, time_out=0.8)[0]
+        """发送 E 后立即交由队伍轴切人。"""
+        self.send_resonance_key()
+        self.record_resonance_use()
+        return True
 
     def _perform_team_plunge(self, time_out=2):
         start = time.time()

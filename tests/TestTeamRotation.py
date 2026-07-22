@@ -5,7 +5,6 @@ from src.char.BaseChar import BaseChar, Elements
 from src.char.Cartethyia import Cartethyia
 from src.char.Ciaccona import Ciaccona
 from src.char.HavocRover import HavocRover
-from src.task.AutoCombatTask import AutoCombatTask
 from src.team.TeamRotation import TeamRotation, TeamRotationStep, select_team_rotation
 from src.team.cartethyia_ciaccona_aero_rover import CartethyiaCiacconaAeroRoverRotation
 
@@ -77,7 +76,7 @@ class TestTeamRotation(unittest.TestCase):
         chars[2].ring_index = Elements.HAVOC
         self.assertFalse(CartethyiaCiacconaAeroRoverRotation.matches(chars))
 
-    def test_team_rotation_runs_one_step_and_switches_to_explicit_target(self):
+    def test_team_rotation_runs_complete_cycle_and_switches_to_explicit_target(self):
         class First(BaseChar):
             def team_action(self):
                 self.task.actions.append('first-action')
@@ -102,21 +101,30 @@ class TestTeamRotation(unittest.TestCase):
                 self.actions = []
                 self.chars = [First(self, 0), Second(self, 1)]
                 self.chars[0].is_current_char = True
+                self.detected_index = 0
+                self.in_liberation = False
+                self.switch_char_time_out = 1
 
             def get_current_char(self, raise_exception=False):
                 return next((char for char in self.chars if char.is_current_char), None)
 
-            def switch_to_char(self, current, target):
-                self.actions.append(f'switch-{current.index}-{target.index}')
-                current.is_current_char = False
-                target.is_current_char = True
+            def send_key(self, key):
+                if self.detected_index != key - 1:
+                    self.actions.append(f'switch-{self.detected_index}-{key - 1}')
+                self.detected_index = key - 1
+
+            def in_team(self):
+                return True, self.detected_index, len(self.chars)
+
+            def next_frame(self):
+                pass
 
         task = Task()
         rotation = Rotation(task)
 
         self.assertTrue(rotation.perform())
         self.assertEqual(task.actions, ['first-action', 'switch-0-1'])
-        self.assertEqual(rotation.step_index, 1)
+        self.assertEqual(rotation.step_index, 0)
         self.assertTrue(task.chars[1].is_current_char)
 
     def test_select_team_rotation_reuses_only_the_same_combat(self):
@@ -137,33 +145,6 @@ class TestTeamRotation(unittest.TestCase):
 
         task.combat_start += 1
         self.assertIsNot(select_team_rotation(task), rotation)
-
-    def test_switch_to_char_does_not_use_heuristic_target_selection(self):
-        combat = AutoCombatTask.__new__(AutoCombatTask)
-        current = BaseChar(combat, 0)
-        heuristic_target = BaseChar(combat, 1)
-        explicit_target = BaseChar(combat, 2)
-        combat.chars = [current, heuristic_target, explicit_target]
-        current.is_current_char = True
-        combat.in_liberation = False
-        combat.update_lib_portrait_icon = lambda: None
-        combat.check_combat = lambda: None
-        combat.log_debug = lambda *args, **kwargs: None
-        combat.click = lambda: None
-        combat.sleep = lambda *args, **kwargs: None
-        combat.add_freeze_duration = lambda *args, **kwargs: None
-        combat.send_key = lambda key: setattr(combat, 'detected_index', key - 1)
-        combat.in_team = lambda: (True, getattr(combat, 'detected_index', current.index), 3)
-        current.get_current_con = lambda: 0
-        current.is_con_full = lambda: False
-        current.f_break = lambda **kwargs: None
-
-        combat.switch_to_char(current, explicit_target)
-
-        self.assertTrue(explicit_target.is_current_char)
-        self.assertFalse(heuristic_target.is_current_char)
-        self.assertEqual(combat.detected_index, explicit_target.index)
-
 
 if __name__ == '__main__':
     unittest.main()

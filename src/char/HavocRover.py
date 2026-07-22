@@ -127,14 +127,6 @@ class HavocRover(BaseChar):
             self.logger.warning(f'team aero combo requires wind rover, ring_index={self.ring_index}')
             return False
 
-        self.wind_routine_wait_down(check_forte_full=False)
-        if not self.task.wait_until(
-                self.resonance_available,
-                post_action=self.click_with_interval,
-                time_out=0.5,
-                raise_if_not_found=False):
-            self.logger.warning('team aero combo resonance was not available')
-            return False
         if not self.wind_routine_take_off():
             self.logger.warning('team aero combo failed to enter flying state')
             return False
@@ -146,17 +138,26 @@ class HavocRover(BaseChar):
         if use_liberation:
             if not self.click_liberation(send_click=True, wait_if_cd_ready=0.4):
                 return False
-            return self.click_resonance(send_click=False, time_out=0.8)[0]
+            self.send_resonance_key()
+            self.record_resonance_use()
         return True
 
     def wind_routine_take_off(self):
         start = time.time()
+        last_resonance = 0
+        resonance_recorded = False
         while time.time() - start < 1:
-            self.send_resonance_key(interval=0.1)
-            self.task.next_frame()
+            now = time.time()
+            if now - last_resonance > 0.1:
+                self.send_resonance_key(interval=0.1)
+                last_resonance = now
+                if not resonance_recorded:
+                    self.record_resonance_use()
+                    resonance_recorded = True
             self.click(interval=0.1)
             if self.wind_routine_flying():
                 return True
+            self.task.next_frame()
         return False
 
     def wind_routine_click_while_flying(self, duration, interval=0.1, after_first_attack=None):

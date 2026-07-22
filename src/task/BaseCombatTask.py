@@ -622,12 +622,6 @@ class BaseCombatTask(CombatCheck):
             post_action(switch_to, has_intro)
         logger.info(f'{log_prefix} end {(current_char.last_switch_time - start):.3f}s')
 
-    def switch_to_char(self, current_char, switch_to, post_action=None, free_intro=False):
-        """切换到指定角色，供队伍手法进行显式编排。"""
-        has_intro, current_con = self._switch_intro_state(current_char, free_intro=free_intro)
-        self._switch_to_selected_char(current_char, switch_to, has_intro, current_con=current_con,
-                                      post_action=post_action, log_prefix='switch_to_char')
-
     def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
         """切换到下一个最优角色。
 
