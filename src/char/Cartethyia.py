@@ -152,7 +152,7 @@ class Cartethyia(BaseChar):
         return template.mat[:int(h * 0.5)], box
 
     def acquire_sword2(self):
-        """持续普攻至第二把剑出现；角色手法与队伍手法共用同一合轴检测。"""
+        """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
         half_mat, half_box = self._sword2_half_feature()
         time_out = 3.5
         if try_once := bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85)):
@@ -165,7 +165,7 @@ class Cartethyia(BaseChar):
             if not interrupt_handled and self.flying():
                 time_out = 2.5 if time_out == 2 else time_out
                 interrupt_handled = True
-                self.task.wait_until(lambda: not self.flying(), time_out=3)
+                self.wait_down()
                 start = time.time()
             self.click(interval=0.1, after_sleep=0.01)
             self.check_combat()
