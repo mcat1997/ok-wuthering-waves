@@ -122,10 +122,10 @@ class HavocRover(BaseChar):
 
     def perform_team_aero_air_combo(self, use_echo=False, use_liberation=False):
         """气动漂泊者队伍轴：E 起飞、空中三段普攻，可选声骸或大招后 E。"""
-        self.send_resonance_key()
-        self.record_resonance_use()
-        self.click(interval=0.1, after_sleep=0.01)
-        self.init()
+        if self.ring_index < 0:
+            self.ring_index = Elements.WIND
+            self._bind_form_logger()
+            self.init_wind()
         if self.ring_index != Elements.WIND:
             self.logger.warning(f'team aero combo requires wind rover, ring_index={self.ring_index}')
             return False
@@ -135,7 +135,11 @@ class HavocRover(BaseChar):
 
         after_first_attack = (lambda: self.click_echo(time_out=0)) if use_echo else None
         self.wind_routine_click_while_flying(
-            1.74, after_first_attack=after_first_attack, require_flying=False)
+            1.74,
+            after_first_attack=after_first_attack,
+            require_flying=False,
+            continuous=True,
+        )
 
         if use_liberation:
             if not self.click_liberation(send_click=True, wait_if_cd_ready=0.4):
@@ -156,26 +160,30 @@ class HavocRover(BaseChar):
                 if not resonance_recorded:
                     self.record_resonance_use()
                     resonance_recorded = True
-            self.click(interval=0.1, after_sleep=0.01)
+            self.click(interval=0.1, after_sleep=0)
             if self.wind_routine_flying():
                 return True
             self.task.next_frame()
         return False
 
     def wind_routine_click_while_flying(
-            self, duration, interval=0.1, after_first_attack=None, require_flying=True):
+            self, duration, interval=0.1, after_first_attack=None, require_flying=True,
+            continuous=False):
         start = time.time()
         first_attack = True
         while time.time() - start < duration:
             if require_flying and not self.wind_routine_flying():
                 return False
             if first_attack and after_first_attack is not None:
-                self.task.click(after_sleep=interval)
+                self.task.click(after_sleep=0 if continuous else interval)
                 after_first_attack()
                 first_attack = False
             else:
                 self.click(interval=0.1)
-                self.sleep(interval)
+                if continuous:
+                    self.task.next_frame()
+                else:
+                    self.sleep(interval)
         return True
 
     def wind_routine_flying(self):

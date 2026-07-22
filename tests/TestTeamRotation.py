@@ -153,18 +153,13 @@ class TestTeamRotation(unittest.TestCase):
 
         actions = []
         rover = HavocRover(Task(), 0, ring_index=Elements.WIND)
-        rover.send_resonance_key = lambda **_kwargs: actions.append('immediate-E')
-        rover.record_resonance_use = lambda: None
-        rover.click = lambda **_kwargs: actions.append('immediate-A')
-        rover.init = lambda: None
         rover.wind_routine_take_off = lambda: actions.append('E-takeoff') or True
         rover.wind_routine_click_while_flying = (
             lambda *_args, **_kwargs: actions.append('3A') or True)
         rover.click_liberation = lambda **_kwargs: actions.append('R') or True
 
         self.assertTrue(rover.perform_team_aero_air_combo(use_liberation=True))
-        self.assertEqual(
-            actions, ['immediate-E', 'immediate-A', 'E-takeoff', '3A', 'R', 'E-takeoff'])
+        self.assertEqual(actions, ['E-takeoff', '3A', 'R', 'E-takeoff'])
 
     def test_cartethyia_team_requires_aero_rover_when_form_is_known(self):
         chars = [
