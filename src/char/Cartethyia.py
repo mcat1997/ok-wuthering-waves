@@ -179,10 +179,9 @@ class Cartethyia(BaseChar):
             self.is_cartethyia = False
             self.transform = True
 
-        ready = self.task.wait_until(
-            self.is_lib_big_available, time_out=2, raise_if_not_found=False)
-        if not ready or not self.click_liberation(wait_if_cd_ready=0.4):
-            return False
+        # 开局这里是动画结束后立即再次点按 R，不依赖后续连段才出现的二段大招特征。
+        self.logger.info('cartethyia team opening send second liberation to return to small form')
+        self.send_liberation_key(after_sleep=0.1)
         self.is_cartethyia = True
         self.transform = False
         return self.perform_team_normal_four(use_echo=True)
