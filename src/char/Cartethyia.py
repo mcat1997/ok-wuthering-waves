@@ -155,17 +155,21 @@ class Cartethyia(BaseChar):
         return self.sword2_half_mat, self.sword2_half_box
 
     def acquire_sword2(
-            self, check_combat=True, handle_airborne_interrupt=True, threshold=0.85):
+            self, check_combat=True, handle_airborne_interrupt=True, threshold=0.85,
+            initial_feature_state=None, start_timeout_condition=None, click_after_sleep=0.01):
         """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
         half_mat, half_box = self._sword2_half_feature()
         time_out = 3.5
-        if try_once := bool(self.task.find_one(
-                template=half_mat, box=half_box, threshold=threshold)):
+        if initial_feature_state is None:
+            initial_feature_state = bool(self.task.find_one(
+                template=half_mat, box=half_box, threshold=threshold))
+        if try_once := initial_feature_state:
             time_out = 2 if not self.is_first_engage() else 2.5
         interrupt_handled = False
         detected = False
-        start = time.time()
-        while time.time() - start < time_out:
+        operation_start = time.time()
+        timeout_start = None if start_timeout_condition else operation_start
+        while time.time() - operation_start < 7:
             if not try_once and self.task.find_one(
                     template=half_mat, box=half_box, threshold=threshold):
                 detected = True
@@ -174,18 +178,25 @@ class Cartethyia(BaseChar):
                 time_out = 2.5 if time_out == 2 else time_out
                 interrupt_handled = True
                 self.wait_down()
-                start = time.time()
-            self.click(interval=0.1, after_sleep=0.01)
+                timeout_start = time.time()
+            self.click(interval=0.1, after_sleep=click_after_sleep)
             if check_combat:
                 self.check_combat()
             self.task.next_frame()
+            if timeout_start is None and start_timeout_condition():
+                timeout_start = time.time()
+            if timeout_start is not None and time.time() - timeout_start >= time_out:
+                break
         self.logger.info(
-            f'sword2: click duration {time.time() - start:.3f}s '
+            f'sword2: click duration {time.time() - operation_start:.3f}s '
             f'detected={detected} existing={try_once}')
         return True
 
     def perform_team_opening(self):
         """小卡 R1-R2 回到普通形态，持续普攻至第四段的合轴点。"""
+        half_mat, half_box = self._sword2_half_feature()
+        sword2_at_start = bool(self.task.find_one(
+            template=half_mat, box=half_box, threshold=0.7))
         if self.is_small():
             if not self.click_liberation(
                     wait_if_cd_ready=0.4,
@@ -199,11 +210,14 @@ class Cartethyia(BaseChar):
         self.send_liberation_key()
         self.is_cartethyia = True
         self.transform = False
-        self.click(interval=0.1, after_sleep=0.01)
+        self.click(interval=0.1, after_sleep=0)
         return self.acquire_sword2(
             check_combat=False,
             handle_airborne_interrupt=False,
             threshold=0.7,
+            initial_feature_state=sword2_at_start,
+            start_timeout_condition=self.is_small,
+            click_after_sleep=0,
         )
 
     def perform_team_resonance_switch(self):

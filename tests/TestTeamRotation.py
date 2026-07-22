@@ -75,7 +75,8 @@ class TestTeamRotation(unittest.TestCase):
                 pass
 
         class Task:
-            pass
+            def find_one(self, **_kwargs):
+                return False
 
         actions = []
         cartethyia = object.__new__(Cartethyia)
@@ -84,6 +85,7 @@ class TestTeamRotation(unittest.TestCase):
         cartethyia.is_cartethyia = True
         cartethyia.transform = False
         cartethyia.is_small = lambda: True
+        cartethyia._sword2_half_feature = lambda: ('mat', 'box')
         def click_liberation(**kwargs):
             actions.append('R1')
             kwargs['animation_post_action']()
@@ -106,6 +108,9 @@ class TestTeamRotation(unittest.TestCase):
                 'check_combat': False,
                 'handle_airborne_interrupt': False,
                 'threshold': 0.7,
+                'initial_feature_state': False,
+                'start_timeout_condition': cartethyia.is_small,
+                'click_after_sleep': 0,
             }),
         )
 
