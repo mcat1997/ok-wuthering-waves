@@ -78,13 +78,20 @@ class Ciaccona(BaseChar):
             self.check_combat()
             self.task.next_frame()
 
-    def perform_plunge_normal_forte(self):
-        """下落攻击接落地普攻，供角色手法与队伍手法共同构建回路。"""
+    def perform_plunge_normal_forte(self, time_out=1.6):
+        """持续下落攻击与落地普攻，直到共鸣回路至少增加一格。"""
+        forte_before = self.judge_forte()
         self.click_jump_with_click(0.4)
-        self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
-        self.click(interval=0.1)
-        self.task.next_frame()
-        return True
+        start = time.time()
+        while time.time() - start < time_out:
+            if self.judge_forte() > forte_before:
+                return True
+            self.click(interval=0.08)
+            self.check_combat()
+            self.task.next_frame()
+        self.logger.warning(
+            f'ciaccona plunge-normal did not increase forte from {forte_before}')
+        return False
 
     def continues_click_a(self, duration=0.6):
         start = time.time()
@@ -174,9 +181,10 @@ class Ciaccona(BaseChar):
         return forte
 
     def perform_team_plunge_forte(self, use_resonance=False):
-        self.perform_plunge_normal_forte()
+        if not self.perform_plunge_normal_forte():
+            return False
         if use_resonance:
-            self.send_resonance_key()
+            self.send_resonance_key(post_sleep=0.05)
             self.record_resonance_use()
         return True
 

@@ -31,14 +31,13 @@ class CartethyiaCiacconaAeroRoverRotation(TeamRotation):
             Cartethyia,
             'perform_team_opening',
             next_char_cls=HavocRover,
-            label='卡提希娅 R1-R2-4A+声骸',
+            label='卡提希娅 R1-R2-4A',
         ),
         step(
             HavocRover,
             'perform_team_aero_air_combo',
             next_char_cls=Ciaccona,
-            label='气动漂泊者 E-空中3A+声骸',
-            use_echo=True,
+            label='气动漂泊者 E-空中3A',
         ),
         step(
             Ciaccona,

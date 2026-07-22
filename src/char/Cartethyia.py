@@ -174,7 +174,7 @@ class Cartethyia(BaseChar):
         return True
 
     def perform_team_opening(self):
-        """小卡 R1-R2 回到普通形态，随后四段普攻并在其中释放声骸。"""
+        """小卡 R1-R2 回到普通形态，持续普攻至第四段的合轴点。"""
         if self.is_small():
             if not self.click_liberation(wait_if_cd_ready=0.4):
                 return False
@@ -183,16 +183,21 @@ class Cartethyia(BaseChar):
 
         self.logger.info('cartethyia team opening send second liberation to return to small form')
         self.send_liberation_key()
+        settled = self.task.wait_until(
+            self.is_small,
+            post_action=self.click_with_interval,
+            time_out=2.5,
+            raise_if_not_found=False,
+        )
+        if not settled:
+            self.logger.warning('cartethyia small form was not confirmed after opening second liberation')
         self.is_cartethyia = True
         self.transform = False
-
-        self.task.click()
-        self.click_echo(time_out=0)
         return self.acquire_sword2()
 
     def perform_team_resonance_switch(self):
         """发送 E 后立即交由队伍轴切人。"""
-        self.send_resonance_key()
+        self.send_resonance_key(post_sleep=0.05)
         self.record_resonance_use()
         return True
 

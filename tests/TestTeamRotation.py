@@ -64,6 +64,83 @@ class TestTeamRotation(unittest.TestCase):
                 'perform_team_final_rotation',
             ],
         )
+        self.assertNotIn('use_echo', rotation.steps[1].kwargs)
+
+    def test_cartethyia_opening_attacks_during_second_liberation_transition(self):
+        class Logger:
+            def info(self, *_args, **_kwargs):
+                pass
+
+            def warning(self, *_args, **_kwargs):
+                pass
+
+        class Task:
+            def wait_until(self, condition, post_action=None, **_kwargs):
+                if post_action:
+                    post_action()
+                return condition()
+
+        actions = []
+        cartethyia = object.__new__(Cartethyia)
+        cartethyia.task = Task()
+        cartethyia.logger = Logger()
+        cartethyia.is_cartethyia = True
+        cartethyia.transform = False
+        cartethyia.is_small = lambda: True
+        cartethyia.click_liberation = lambda **_kwargs: actions.append('R1') or True
+        cartethyia.send_liberation_key = lambda **_kwargs: actions.append('R2')
+        cartethyia.click_with_interval = lambda: actions.append('A-during-R2')
+        cartethyia.acquire_sword2 = lambda: actions.append('A-until-N4') or True
+
+        self.assertTrue(cartethyia.perform_team_opening())
+        self.assertEqual(actions, ['R1', 'R2', 'A-during-R2', 'A-until-N4'])
+
+    def test_ciaccona_plunge_normal_waits_for_one_forte_gain(self):
+        class Task:
+            def next_frame(self):
+                pass
+
+        actions = []
+        forte = iter((0, 0, 1))
+        ciaccona = Ciaccona(Task(), 0)
+        ciaccona.judge_forte = lambda: next(forte)
+        ciaccona.click_jump_with_click = lambda _delay: actions.append('plunge')
+        ciaccona.click = lambda **_kwargs: actions.append('normal')
+        ciaccona.check_combat = lambda: None
+
+        self.assertTrue(ciaccona.perform_plunge_normal_forte())
+        self.assertEqual(actions, ['plunge', 'normal'])
+
+    def test_aero_rover_takeoff_does_not_insert_a_ground_normal(self):
+        class Task:
+            def next_frame(self):
+                pass
+
+        actions = []
+        flying = iter((False, True))
+        rover = HavocRover(Task(), 0, ring_index=Elements.WIND)
+        rover.send_resonance_key = lambda **_kwargs: actions.append('E')
+        rover.record_resonance_use = lambda: actions.append('record-E')
+        rover.wind_routine_flying = lambda: next(flying)
+        rover.click = lambda **_kwargs: actions.append('ground-normal')
+
+        self.assertTrue(rover.wind_routine_take_off())
+        self.assertEqual(actions, ['E', 'record-E'])
+
+    def test_aero_rover_confirms_second_takeoff_after_liberation(self):
+        class Task:
+            pass
+
+        actions = []
+        rover = HavocRover(Task(), 0, ring_index=Elements.WIND)
+        rover.init = lambda: None
+        rover.wind_routine_take_off = lambda: actions.append('E-takeoff') or True
+        rover.wind_routine_click_while_flying = (
+            lambda *_args, **_kwargs: actions.append('3A') or True)
+        rover.click_liberation = lambda **_kwargs: actions.append('R') or True
+
+        self.assertTrue(rover.perform_team_aero_air_combo(use_liberation=True))
+        self.assertEqual(actions, ['E-takeoff', '3A', 'R', 'E-takeoff'])
 
     def test_cartethyia_team_requires_aero_rover_when_form_is_known(self):
         chars = [

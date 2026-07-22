@@ -138,8 +138,9 @@ class HavocRover(BaseChar):
         if use_liberation:
             if not self.click_liberation(send_click=True, wait_if_cd_ready=0.4):
                 return False
-            self.send_resonance_key()
-            self.record_resonance_use()
+            if not self.wind_routine_take_off():
+                self.logger.warning('team aero combo failed to confirm post-liberation resonance')
+                return False
         return True
 
     def wind_routine_take_off(self):
@@ -154,7 +155,6 @@ class HavocRover(BaseChar):
                 if not resonance_recorded:
                     self.record_resonance_use()
                     resonance_recorded = True
-            self.click(interval=0.1)
             if self.wind_routine_flying():
                 return True
             self.task.next_frame()
