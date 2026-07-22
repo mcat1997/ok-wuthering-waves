@@ -156,7 +156,8 @@ class Cartethyia(BaseChar):
 
     def acquire_sword2(
             self, check_combat=True, handle_airborne_interrupt=True, threshold=0.85,
-            initial_feature_state=None, start_timeout_condition=None, click_after_sleep=0.01):
+            initial_feature_state=None, start_timeout_condition=None, click_after_sleep=0.01,
+            timeout_early=0):
         """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
         half_mat, half_box = self._sword2_half_feature()
         time_out = 3.5
@@ -185,7 +186,8 @@ class Cartethyia(BaseChar):
             self.task.next_frame()
             if timeout_start is None and start_timeout_condition():
                 timeout_start = time.time()
-            if timeout_start is not None and time.time() - timeout_start >= time_out:
+            effective_time_out = max(0, time_out - timeout_early)
+            if timeout_start is not None and time.time() - timeout_start >= effective_time_out:
                 break
         self.logger.info(
             f'sword2: click duration {time.time() - operation_start:.3f}s '
@@ -218,6 +220,7 @@ class Cartethyia(BaseChar):
             initial_feature_state=sword2_at_start,
             start_timeout_condition=self.is_small,
             click_after_sleep=0,
+            timeout_early=0.5,
         )
 
     def perform_team_resonance_switch(self):

@@ -111,6 +111,7 @@ class TestTeamRotation(unittest.TestCase):
                 'initial_feature_state': False,
                 'start_timeout_condition': cartethyia.is_small,
                 'click_after_sleep': 0,
+                'timeout_early': 0.5,
             }),
         )
 
