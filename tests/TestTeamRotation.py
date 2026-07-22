@@ -84,7 +84,12 @@ class TestTeamRotation(unittest.TestCase):
         cartethyia.is_cartethyia = True
         cartethyia.transform = False
         cartethyia.is_small = lambda: True
-        cartethyia.click_liberation = lambda **_kwargs: actions.append('R1') or True
+        def click_liberation(**kwargs):
+            actions.append('R1')
+            kwargs['animation_post_action']()
+            return True
+
+        cartethyia.click_liberation = click_liberation
         cartethyia.send_liberation_key = lambda **_kwargs: actions.append('R2')
         cartethyia.click = lambda **_kwargs: actions.append('A-during-R2')
         def acquire_sword2(**kwargs):
@@ -94,12 +99,13 @@ class TestTeamRotation(unittest.TestCase):
         cartethyia.acquire_sword2 = acquire_sword2
 
         self.assertTrue(cartethyia.perform_team_opening())
-        self.assertEqual(actions[:3], ['R1', 'R2', 'A-during-R2'])
+        self.assertEqual(actions[:4], ['R1', 'R2', 'R2', 'A-during-R2'])
         self.assertEqual(
-            actions[3],
+            actions[4],
             ('A-until-N4', {
                 'check_combat': False,
                 'handle_airborne_interrupt': False,
+                'threshold': 0.7,
             }),
         )
 

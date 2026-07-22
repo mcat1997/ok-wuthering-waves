@@ -564,13 +564,17 @@ class BaseChar:
         self._echo_available = False
         self._resonance_available = False
 
-    def click_liberation(self, con_less_than=-1, send_click=False, wait_if_cd_ready=0.1):
+    def click_liberation(
+            self, con_less_than=-1, send_click=False, wait_if_cd_ready=0.1,
+            animation_post_action=None, animation_post_delay=0):
         """尝试点击并释放共鸣解放。
 
         Args:
             con_less_than (float, optional): 仅当协奏值小于此值时释放。默认为 -1 (不检查)。
             send_click (bool, optional): 进入动画后是否发送普通点击。默认为 False。
             wait_if_cd_ready (float, optional): 如果技能冷却即将完成, 等待多少秒。默认为 0。
+            animation_post_action (callable, optional): 大招动画期间持续执行的预输入。
+            animation_post_delay (float, optional): 动画开始后延迟多久执行预输入。
 
         Returns:
             bool: 如果成功释放则返回 True。
@@ -624,6 +628,8 @@ class BaseChar:
                 clicked = True
             if send_click:
                 self.click(interval=0.1)
+            if animation_post_action and time.time() - start >= animation_post_delay:
+                animation_post_action()
             if time.time() - start > 7:
                 self.task.in_liberation = False
                 self.task.raise_not_in_combat('too long a liberation, the boss was killed by the liberation')

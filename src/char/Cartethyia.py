@@ -154,17 +154,20 @@ class Cartethyia(BaseChar):
     def _sword2_half_feature(self):
         return self.sword2_half_mat, self.sword2_half_box
 
-    def acquire_sword2(self, check_combat=True, handle_airborne_interrupt=True):
+    def acquire_sword2(
+            self, check_combat=True, handle_airborne_interrupt=True, threshold=0.85):
         """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
         half_mat, half_box = self._sword2_half_feature()
         time_out = 3.5
-        if try_once := bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85)):
+        if try_once := bool(self.task.find_one(
+                template=half_mat, box=half_box, threshold=threshold)):
             time_out = 2 if not self.is_first_engage() else 2.5
         interrupt_handled = False
         detected = False
         start = time.time()
         while time.time() - start < time_out:
-            if not try_once and self.task.find_one(template=half_mat, box=half_box, threshold=0.85):
+            if not try_once and self.task.find_one(
+                    template=half_mat, box=half_box, threshold=threshold):
                 detected = True
                 break
             if handle_airborne_interrupt and not interrupt_handled and self.flying():
@@ -184,7 +187,10 @@ class Cartethyia(BaseChar):
     def perform_team_opening(self):
         """小卡 R1-R2 回到普通形态，持续普攻至第四段的合轴点。"""
         if self.is_small():
-            if not self.click_liberation(wait_if_cd_ready=0.4):
+            if not self.click_liberation(
+                    wait_if_cd_ready=0.4,
+                    animation_post_action=lambda: self.send_liberation_key(interval=0.1),
+                    animation_post_delay=2.5):
                 return False
             self.is_cartethyia = False
             self.transform = True
@@ -197,6 +203,7 @@ class Cartethyia(BaseChar):
         return self.acquire_sword2(
             check_combat=False,
             handle_airborne_interrupt=False,
+            threshold=0.7,
         )
 
     def perform_team_resonance_switch(self):
