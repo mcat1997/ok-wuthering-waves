@@ -100,9 +100,8 @@ def select_team_rotation(task):
 
     combat_start = getattr(task, 'combat_start', 0)
     existing = getattr(task, '_team_rotation', None)
-    if existing and not existing.disabled and existing.still_matches():
-        if existing.combat_start == combat_start:
-            return existing
+    if existing and existing.still_matches() and existing.combat_start == combat_start:
+        return None if existing.disabled else existing
 
     for rotation_cls in (CartethyiaCiacconaAeroRoverRotation,):
         if rotation_cls.matches(getattr(task, 'chars', [])):

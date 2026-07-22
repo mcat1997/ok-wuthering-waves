@@ -16,6 +16,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.default_config = {'_enabled': True}
+        self.enable_after_start = True
         self.trigger_interval = 0.1
         self.name = "Auto Combat"
         self.description = "Enable auto combat in Abyss, Game World etc"
@@ -35,21 +36,6 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         }
         self.op_index = 0
         self.char_features_warmed_up = False
-        self.last_trigger_state = None
-        self.last_trigger_state_log = 0
-
-    def on_create(self):
-        super().on_create()
-        logger.info(
-            f'initialized enabled={self.enabled} '
-            f'config_enabled={self.config.get("_enabled", False)}')
-
-    def log_trigger_state(self, state):
-        now = time.time()
-        if state != self.last_trigger_state or now - self.last_trigger_state_log >= 5:
-            logger.info(f'trigger state={state}')
-            self.last_trigger_state = state
-            self.last_trigger_state_log = now
 
     def warm_up_char_features(self):
         if self.char_features_warmed_up:
@@ -67,19 +53,24 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.warm_up_char_features()
         ret = False
         if not self.scene.in_team(self.in_team_and_world):
-            self.log_trigger_state('not_in_team')
             return ret
         self.use_liberation = self.config.get('Use Liberation')
         if not self.use_liberation and not self.in_world():  # 仅大世界生效
             self.use_liberation = True
         combat_start = time.time()
         while self.in_combat():
-            self.log_trigger_state('in_combat')
             ret = True
             try:
                 rotation = select_team_rotation(self)
-                if rotation and rotation.perform():
-                    continue
+                if rotation:
+                    try:
+                        if rotation.perform():
+                            continue
+                    except (CharDeadException, NotInCombatException):
+                        raise
+                    except Exception as e:
+                        rotation.disabled = True
+                        logger.error(f'{rotation.name} disabled after unexpected step error', e)
                 self.get_current_char().perform()
             except CharDeadException:
                 self.log_error(f'Characters dead', notify=True)
@@ -89,8 +80,6 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 break
         if ret:
             self.combat_end()
-        else:
-            self.log_trigger_state('not_in_combat')
         return ret
 
     def realm_perform(self):
