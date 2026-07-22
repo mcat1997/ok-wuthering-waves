@@ -87,10 +87,21 @@ class TestTeamRotation(unittest.TestCase):
         cartethyia.click_liberation = lambda **_kwargs: actions.append('R1') or True
         cartethyia.send_liberation_key = lambda **_kwargs: actions.append('R2')
         cartethyia.click = lambda **_kwargs: actions.append('A-during-R2')
-        cartethyia.acquire_sword2 = lambda: actions.append('A-until-N4') or True
+        def acquire_sword2(**kwargs):
+            actions.append(('A-until-N4', kwargs))
+            return True
+
+        cartethyia.acquire_sword2 = acquire_sword2
 
         self.assertTrue(cartethyia.perform_team_opening())
-        self.assertEqual(actions, ['R1', 'R2', 'A-during-R2', 'A-until-N4'])
+        self.assertEqual(actions[:3], ['R1', 'R2', 'A-during-R2'])
+        self.assertEqual(
+            actions[3],
+            ('A-until-N4', {
+                'check_combat': False,
+                'handle_airborne_interrupt': False,
+            }),
+        )
 
     def test_ciaccona_plunge_normal_waits_for_one_forte_gain(self):
         class Task:

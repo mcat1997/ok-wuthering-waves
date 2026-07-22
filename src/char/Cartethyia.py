@@ -154,7 +154,7 @@ class Cartethyia(BaseChar):
     def _sword2_half_feature(self):
         return self.sword2_half_mat, self.sword2_half_box
 
-    def acquire_sword2(self):
+    def acquire_sword2(self, check_combat=True, handle_airborne_interrupt=True):
         """沿用角色手法持续普攻至第二把剑出现，并以此作为合轴点。"""
         half_mat, half_box = self._sword2_half_feature()
         time_out = 3.5
@@ -167,16 +167,18 @@ class Cartethyia(BaseChar):
             if not try_once and self.task.find_one(template=half_mat, box=half_box, threshold=0.85):
                 detected = True
                 break
-            if not interrupt_handled and self.flying():
+            if handle_airborne_interrupt and not interrupt_handled and self.flying():
                 time_out = 2.5 if time_out == 2 else time_out
                 interrupt_handled = True
                 self.wait_down()
                 start = time.time()
             self.click(interval=0.1, after_sleep=0.01)
-            self.check_combat()
+            if check_combat:
+                self.check_combat()
             self.task.next_frame()
         self.logger.info(
-            f'sword2: click duration {time.time() - start:.3f}s detected={detected}')
+            f'sword2: click duration {time.time() - start:.3f}s '
+            f'detected={detected} existing={try_once}')
         return True
 
     def perform_team_opening(self):
@@ -192,7 +194,10 @@ class Cartethyia(BaseChar):
         self.is_cartethyia = True
         self.transform = False
         self.click(interval=0.1, after_sleep=0.01)
-        return self.acquire_sword2()
+        return self.acquire_sword2(
+            check_combat=False,
+            handle_airborne_interrupt=False,
+        )
 
     def perform_team_resonance_switch(self):
         """发送 E 后立即交由队伍轴切人。"""
