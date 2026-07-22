@@ -144,31 +144,33 @@ class Cartethyia(BaseChar):
             self.res_time = time.time()
         return clicked
 
-    def _team_sword2_half_feature(self):
+    def _sword2_half_feature(self):
         template = self.task.get_feature_by_name('forte_cartethyia_sword2')
         h = template.mat.shape[0]
         box = self.task.get_box_by_name('forte_cartethyia_sword2')
         box.height = int(h * 0.6)
         return template.mat[:int(h * 0.5)], box
 
-    def perform_team_normal_four(self, use_echo=False, time_out=3.5):
-        """持续输入四段普攻，以第二把剑出现作为末段可合轴点。"""
-        half_mat, half_box = self._team_sword2_half_feature()
-        sword2_at_start = bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85))
-        duration = min(time_out, 2.2) if sword2_at_start else time_out
-        echo_used = False
+    def acquire_sword2(self):
+        """持续普攻至第二把剑出现；角色手法与队伍手法共用同一合轴检测。"""
+        half_mat, half_box = self._sword2_half_feature()
+        time_out = 3.5
+        if try_once := bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85)):
+            time_out = 2 if not self.is_first_engage() else 2.5
+        interrupt_handled = False
         start = time.time()
-        while time.time() - start < duration:
+        while time.time() - start < time_out:
+            if not try_once and self.task.find_one(template=half_mat, box=half_box, threshold=0.85):
+                break
+            if not interrupt_handled and self.flying():
+                time_out = 2.5 if time_out == 2 else time_out
+                interrupt_handled = True
+                self.task.wait_until(lambda: not self.flying(), time_out=3)
+                start = time.time()
             self.click(interval=0.1, after_sleep=0.01)
-            if use_echo and not echo_used and self.echo_available():
-                echo_used = self.click_echo(time_out=0)
             self.check_combat()
             self.task.next_frame()
-            if not sword2_at_start and self.task.find_one(
-                    template=half_mat, box=half_box, threshold=0.85):
-                return True
-        self.logger.warning(
-            f'cartethyia team normal four used timing fallback sword2_at_start={sword2_at_start}')
+        self.logger.debug(f'sword2: click duration {time.time() - start}')
         return True
 
     def perform_team_opening(self):
@@ -179,21 +181,27 @@ class Cartethyia(BaseChar):
             self.is_cartethyia = False
             self.transform = True
 
-        # 开局这里是动画结束后立即再次点按 R，不依赖后续连段才出现的二段大招特征。
+        # 先确认形态切换完成，避免过早输入被动画吞掉或提前污染剑二合轴检测。
         self.logger.info('cartethyia team opening send second liberation to return to small form')
-        self.send_liberation_key(after_sleep=0.1)
+        self.send_liberation_key()
+        settled = self.task.wait_until(
+            self.is_small,
+            time_out=2.5,
+            raise_if_not_found=False,
+        )
+        if not settled:
+            self.logger.warning('cartethyia small form was not confirmed after opening second liberation')
         self.is_cartethyia = True
         self.transform = False
-        return self.perform_team_normal_four(use_echo=True)
+
+        # 保证首个普攻已发送，再沿用角色原有的声骸释放入口。
+        self.task.click(after_sleep=0.1)
+        self.click_echo(time_out=0)
+        return self.acquire_sword2()
 
     def perform_team_resonance_switch(self):
         """确认 E 已按下后立即交由队伍轴切人。"""
-        ready = self.task.wait_until(self.resonance_available, time_out=0.5, raise_if_not_found=False)
-        if not ready:
-            return False
-        self.send_resonance_key(after_sleep=0.05)
-        self.record_resonance_use()
-        return True
+        return self.click_resonance(send_click=False, time_out=0.8)[0]
 
     def _perform_team_plunge(self, time_out=2):
         start = time.time()
@@ -238,7 +246,7 @@ class Cartethyia(BaseChar):
         return self._team_cast_liberation(to_small=True)
 
     def _team_acquire_three_swords_and_plunge(self):
-        self.perform_team_normal_four()
+        self.acquire_sword2()
 
         self.task.mouse_down()
         start = time.time()
@@ -345,28 +353,7 @@ class Cartethyia(BaseChar):
         if has_perform_action := not all(self.buffs[k] for k in ['sword2', 'sword3']):
             self.logger.info('acquire missing buffs')
         if not self.buffs.get('sword2'):
-            template = self.task.get_feature_by_name('forte_cartethyia_sword2')
-            h = template.mat.shape[0]
-            half_mat = template.mat[:int(h * 0.5)]
-            half_box = self.task.get_box_by_name('forte_cartethyia_sword2')
-            half_box.height = int(h * 0.6)
-            time_out = 3.5
-            if try_once := bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85)):
-                time_out = 2 if not self.is_first_engage() else 2.5
-            start = time.time()
-            interrupt_handled = False
-            while time.time() - start < time_out:
-                if not try_once and self.task.find_one(template=half_mat, box=half_box, threshold=0.85):
-                    break
-                if not interrupt_handled and self.flying():
-                    time_out = 2.5 if time_out == 2 else time_out
-                    interrupt_handled = True
-                    self.task.wait_until(lambda: not self.flying(), time_out=3)
-                    start = time.time()
-                self.click(interval=0.1, after_sleep=0.01)
-                self.check_combat()
-                self.task.next_frame()
-            self.logger.debug(f'sword2: click duration {time.time() - start}')
+            self.acquire_sword2()
         res = False
         if not self.buffs.get('sword3'):
             res = self.click_resonance()[0]

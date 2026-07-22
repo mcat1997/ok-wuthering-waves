@@ -108,14 +108,7 @@ class HavocRover(BaseChar):
         self.wind_routine_wait_down(check_forte_full=False)
         if self.resonance_available() and not self.is_forte_full():
             self.click_echo(time_out=0)
-            start = time.time()
-            flying = False
-            while time.time() - start < 1:
-                self.send_resonance_key(interval=0.1)
-                self.task.next_frame()
-                self.click(interval=0.1)
-                if flying := self.wind_routine_flying():
-                    break
+            flying = self.wind_routine_take_off()
             if not self.use_skyfall_severance:
                 if flying:
                     self.wind_routine_click_while_flying(1.74)
@@ -135,36 +128,50 @@ class HavocRover(BaseChar):
             return False
 
         self.wind_routine_wait_down(check_forte_full=False)
-        start = time.time()
-        while not self.wind_routine_flying() and time.time() - start < 1:
-            self.send_resonance_key(interval=0.1)
-            self.click(interval=0.1)
-            self.task.next_frame()
-        if not self.wind_routine_flying():
+        if not self.task.wait_until(
+                self.resonance_available,
+                post_action=self.click_with_interval,
+                time_out=0.5,
+                raise_if_not_found=False):
+            self.logger.warning('team aero combo resonance was not available')
+            return False
+        if not self.wind_routine_take_off():
             self.logger.warning('team aero combo failed to enter flying state')
             return False
 
-        echo_used = False
-        start = time.time()
-        while time.time() - start < 1.6 and self.wind_routine_flying():
-            self.click(interval=0.1)
-            if use_echo and not echo_used and self.echo_available():
-                echo_used = self.click_echo(time_out=0)
-            self.sleep(0.08)
+        after_first_attack = (lambda: self.click_echo(time_out=0)) if use_echo else None
+        self.wind_routine_click_while_flying(
+            1.74, after_first_attack=after_first_attack)
 
         if use_liberation:
-            self.click_liberation(send_click=True, wait_if_cd_ready=0.4)
-            self.send_resonance_key(after_sleep=0.05)
-            self.record_resonance_use()
+            if not self.click_liberation(send_click=True, wait_if_cd_ready=0.4):
+                return False
+            return self.click_resonance(send_click=False, time_out=0.8)[0]
         return True
 
-    def wind_routine_click_while_flying(self, duration, interval=0.1):
+    def wind_routine_take_off(self):
         start = time.time()
+        while time.time() - start < 1:
+            self.send_resonance_key(interval=0.1)
+            self.task.next_frame()
+            self.click(interval=0.1)
+            if self.wind_routine_flying():
+                return True
+        return False
+
+    def wind_routine_click_while_flying(self, duration, interval=0.1, after_first_attack=None):
+        start = time.time()
+        first_attack = True
         while time.time() - start < duration:
             if not self.wind_routine_flying():
                 return False
-            self.click(interval=0.1)
-            self.sleep(interval)
+            if first_attack and after_first_attack is not None:
+                self.task.click(after_sleep=interval)
+                after_first_attack()
+                first_attack = False
+            else:
+                self.click(interval=0.1)
+                self.sleep(interval)
         return True
 
     def wind_routine_flying(self):

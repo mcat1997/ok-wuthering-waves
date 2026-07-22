@@ -455,14 +455,15 @@ class BaseChar:
         self._echo_available = False
         self.task.send_key(self.get_echo_key(), interval=interval, down_time=down_time, after_sleep=after_sleep)
 
-    def heavy_click_forte(self, check_fun=None):
+    def heavy_click_forte(self, check_fun=None, post_action=None):
         """ 如果回路可用, 重击点击回路直到不可用
         """
         if check_fun is None:
             check_fun = self.is_forte_full
         if check_fun():
             self.task.mouse_down()
-            success = self.task.wait_until(lambda: not check_fun(), time_out=2)
+            success = self.task.wait_until(
+                lambda: not check_fun(), post_action=post_action, time_out=2)
             self.task.mouse_up()
             self.sleep(0.05)
             return success

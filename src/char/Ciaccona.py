@@ -36,21 +36,11 @@ class Ciaccona(BaseChar):
         if self.current_echo() < 0.22:
             self.click_echo(time_out=0)
         if not self.has_intro and not self.need_fast_perform() and not self.is_mouse_forte_full():
-            self.click_jump_with_click(0.4)
-            self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
-            self.continues_normal_attack(0.2)
+            self.perform_plunge_normal_forte()
         if self.click_resonance()[0]:
             jump = False
             wait = True
-        if self.judge_forte() >= 3:
-            if jump:
-                start = time.time()
-                while not self.flying():
-                    self.task.jump(after_sleep=0.01)
-                    if time.time() - start > 0.3:
-                        break
-                    self.task.next_frame()
-            self.heavy_click_forte(check_fun=self.is_mouse_forte_full)
+        if self.perform_forte(jump=jump):
             wait = True
         if self.liberation_available():
             if wait:
@@ -88,6 +78,13 @@ class Ciaccona(BaseChar):
             self.check_combat()
             self.task.next_frame()
 
+    def perform_plunge_normal_forte(self):
+        """下落攻击接落地普攻，供角色手法与队伍手法共同构建回路。"""
+        self.click_jump_with_click(0.4)
+        self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
+        self.continues_normal_attack(0.2)
+        return True
+
     def continues_click_a(self, duration=0.6):
         start = time.time()
         while time.time() - start < duration:
@@ -99,6 +96,23 @@ class Ciaccona(BaseChar):
         box = self.task.box_of_screen_scaled(3840, 2160, 1612, 1987, 2188, 2008, name='ciaccona_forte', hcenter=True)
         forte = self.calculate_forte_num(ciaccona_forte_color, box, 3, 12, 14, 100)
         return forte
+
+    def perform_forte(self, jump=True, use_echo=False):
+        """以角色原有回路检测释放重击，可在重击期间穿插声骸。"""
+        if self.judge_forte() < 3:
+            return False
+        if jump:
+            start = time.time()
+            while not self.flying():
+                self.task.jump(after_sleep=0.01)
+                if time.time() - start > 0.3:
+                    break
+                self.task.next_frame()
+        post_action = (lambda: self.click_echo(time_out=0)) if use_echo else None
+        return bool(self.heavy_click_forte(
+            check_fun=self.is_mouse_forte_full,
+            post_action=post_action,
+        ))
 
     def decide_teammate(self):
         from src.char.Phoebe import Phoebe
@@ -158,46 +172,16 @@ class Ciaccona(BaseChar):
         self.logger.info(f'Frequncy analysis with forte {forte}')
         return forte
 
-    def perform_team_plunge_forte(self, use_resonance=False, build_time=1.6):
-        """下落攻击接普攻，检测到三格回路后可立即确认 E 并交棒。"""
-        self.click_jump_with_click(0.4)
-        self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
-
-        start = time.time()
-        while self.judge_forte() < 3 and time.time() - start < build_time:
-            self.click(interval=0.08)
-            self.task.next_frame()
-
+    def perform_team_plunge_forte(self, use_resonance=False):
+        self.perform_plunge_normal_forte()
         if use_resonance:
-            ready = self.task.wait_until(self.resonance_available, time_out=0.5, raise_if_not_found=False)
-            if not ready:
-                self.logger.warning('ciaccona team plunge could not confirm resonance availability')
-                return False
-            self.send_resonance_key(after_sleep=0.05)
-            self.record_resonance_use()
+            return self.click_resonance(send_click=False, time_out=0.8)[0]
         return True
 
     def perform_team_forte_echo_liberation(self):
         """切回夏空后重击消耗三格回路，在重击期间释放声骸并接大招。"""
-        start = time.time()
-        while not self.is_mouse_forte_full() and time.time() - start < 0.8:
-            self.click(interval=0.08)
-            self.task.next_frame()
-
-        echo_used = False
-        if self.is_mouse_forte_full():
-            self.task.mouse_down()
-            start = time.time()
-            while self.is_mouse_forte_full() and time.time() - start < 2:
-                if not echo_used and self.echo_available():
-                    echo_used = self.click_echo(time_out=0)
-                self.task.next_frame()
-            self.task.mouse_up()
-            self.sleep(0.05)
-        else:
-            self.heavy_attack()
-        if not echo_used:
-            self.click_echo(time_out=0)
+        if not self.perform_forte(jump=False, use_echo=True):
+            return False
 
         liberated = self.click_liberation(wait_if_cd_ready=0.6)
         if liberated:
