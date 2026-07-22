@@ -32,8 +32,8 @@ class WWScene(BaseScene):
         return False
 
     def in_team(self, fun):
-        if self._in_team is None:
-            self._in_team = fun()
+        if not self._in_team:
+            self._in_team = bool(fun())
         return self._in_team
 
     def echo_enhance_btn(self, fun):
