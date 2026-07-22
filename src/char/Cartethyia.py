@@ -105,7 +105,7 @@ class Cartethyia(BaseChar):
         self.logger.debug(f'fleurdelys_n4_duration {duration}')
         return duration
 
-    def click_resonance_with_lib_big(self):
+    def click_resonance_with_lib_big(self, allow_lib_big=True):
         if self.has_cd('resonance'):
             return False
         clicked = False
@@ -136,13 +136,137 @@ class Cartethyia(BaseChar):
                         resonance_click_time = now
                     self.send_resonance_key()
                 last_click = now
-            if self.try_lib_big():
+            if allow_lib_big and self.try_lib_big():
                 break
             self.task.next_frame()
         if clicked:
             self.record_resonance_use()
             self.res_time = time.time()
         return clicked
+
+    def _team_sword2_half_feature(self):
+        template = self.task.get_feature_by_name('forte_cartethyia_sword2')
+        h = template.mat.shape[0]
+        box = self.task.get_box_by_name('forte_cartethyia_sword2')
+        box.height = int(h * 0.6)
+        return template.mat[:int(h * 0.5)], box
+
+    def perform_team_normal_four(self, use_echo=False, time_out=3.5):
+        """持续输入四段普攻，以第二把剑出现作为末段可合轴点。"""
+        half_mat, half_box = self._team_sword2_half_feature()
+        sword2_at_start = bool(self.task.find_one(template=half_mat, box=half_box, threshold=0.85))
+        duration = min(time_out, 2.2) if sword2_at_start else time_out
+        echo_used = False
+        start = time.time()
+        while time.time() - start < duration:
+            self.click(interval=0.1, after_sleep=0.01)
+            if use_echo and not echo_used and self.echo_available():
+                echo_used = self.click_echo(time_out=0)
+            self.check_combat()
+            self.task.next_frame()
+            if not sword2_at_start and self.task.find_one(
+                    template=half_mat, box=half_box, threshold=0.85):
+                return True
+        self.logger.warning(
+            f'cartethyia team normal four used timing fallback sword2_at_start={sword2_at_start}')
+        return True
+
+    def perform_team_opening(self):
+        """小卡 R1-R2 回到普通形态，随后四段普攻并在其中释放声骸。"""
+        if self.is_small():
+            if not self.click_liberation(wait_if_cd_ready=0.4):
+                return False
+            self.is_cartethyia = False
+            self.transform = True
+
+        ready = self.task.wait_until(
+            self.is_lib_big_available, time_out=2, raise_if_not_found=False)
+        if not ready or not self.click_liberation(wait_if_cd_ready=0.4):
+            return False
+        self.is_cartethyia = True
+        self.transform = False
+        return self.perform_team_normal_four(use_echo=True)
+
+    def perform_team_resonance_switch(self):
+        """确认 E 已按下后立即交由队伍轴切人。"""
+        ready = self.task.wait_until(self.resonance_available, time_out=0.5, raise_if_not_found=False)
+        if not ready:
+            return False
+        self.send_resonance_key(after_sleep=0.05)
+        self.record_resonance_use()
+        return True
+
+    def _perform_team_plunge(self, time_out=2):
+        start = time.time()
+        was_available = bool(self.is_mid_air_attack_available())
+        while time.time() - start < time_out:
+            self.task.jump(after_sleep=0.08)
+            self.click(interval=0.1)
+            available = bool(self.is_mid_air_attack_available())
+            if was_available and not available:
+                self.sleep(0.35)
+                return True
+            was_available = was_available or available
+            self.task.next_frame()
+        self.logger.warning('cartethyia team plunge used timing fallback')
+        return True
+
+    def _team_cast_liberation(self, to_small):
+        if not self.click_liberation(wait_if_cd_ready=0.5):
+            return False
+        self.is_cartethyia = to_small
+        self.transform = not to_small
+        if not to_small:
+            self.last_res = -1
+        return True
+
+    def _team_fleurdelys_normals_then_lib2(self):
+        duration = max(0.5, self.fleurdelys_n4_duration())
+        start = time.time()
+        while time.time() - start < duration:
+            self.click_with_interval()
+            self.check_combat()
+            self.task.next_frame()
+
+        ready = self.task.wait_until(
+            self.is_lib_big_available,
+            post_action=self.click_with_interval,
+            time_out=1.5,
+            raise_if_not_found=False,
+        )
+        if not ready:
+            return False
+        return self._team_cast_liberation(to_small=True)
+
+    def _team_acquire_three_swords_and_plunge(self):
+        self.perform_team_normal_four()
+
+        self.task.mouse_down()
+        start = time.time()
+        while time.time() - start < 1.5:
+            if self.task.find_one('forte_cartethyia_sword1', threshold=0.9):
+                break
+            self.task.next_frame()
+        self.task.mouse_up()
+        self.check_combat()
+
+        self.click_resonance(send_click=False, time_out=1)
+        return self._perform_team_plunge()
+
+    def perform_team_final_rotation(self):
+        """执行夏空大招后的卡提希娅完整双形态爆发。"""
+        self._perform_team_plunge()
+        if self.is_small() and not self._team_cast_liberation(to_small=False):
+            return False
+
+        self.click_resonance_with_lib_big(allow_lib_big=False)
+        if not self._team_fleurdelys_normals_then_lib2():
+            return False
+
+        self._team_acquire_three_swords_and_plunge()
+        if self.is_small() and not self._team_cast_liberation(to_small=False):
+            return False
+        return self._team_fleurdelys_normals_then_lib2()
 
     def is_mid_air_attack_available(self):
         if self.is_cartethyia:

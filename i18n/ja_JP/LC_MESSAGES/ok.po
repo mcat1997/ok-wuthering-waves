@@ -1108,3 +1108,9 @@ msgstr "漂泊者"
 
 msgid "Yangyang: Xuanling"
 msgstr "秧秧・玄翎"
+
+msgid "Use Team Rotation"
+msgstr "チームローテーションを使用"
+
+msgid "Use a fixed rotation when the current team is supported"
+msgstr "現在のチームが対応している場合、固定ローテーションを使用します"

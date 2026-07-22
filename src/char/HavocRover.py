@@ -127,6 +127,37 @@ class HavocRover(BaseChar):
         self.click_liberation(send_click=True)
         self.wind_routine_wait_down()
 
+    def perform_team_aero_air_combo(self, use_echo=False, use_liberation=False):
+        """气动漂泊者队伍轴：E 起飞、空中三段普攻，可选声骸或大招后 E。"""
+        self.init()
+        if self.ring_index != Elements.WIND:
+            self.logger.warning(f'team aero combo requires wind rover, ring_index={self.ring_index}')
+            return False
+
+        self.wind_routine_wait_down(check_forte_full=False)
+        start = time.time()
+        while not self.wind_routine_flying() and time.time() - start < 1:
+            self.send_resonance_key(interval=0.1)
+            self.click(interval=0.1)
+            self.task.next_frame()
+        if not self.wind_routine_flying():
+            self.logger.warning('team aero combo failed to enter flying state')
+            return False
+
+        echo_used = False
+        start = time.time()
+        while time.time() - start < 1.6 and self.wind_routine_flying():
+            self.click(interval=0.1)
+            if use_echo and not echo_used and self.echo_available():
+                echo_used = self.click_echo(time_out=0)
+            self.sleep(0.08)
+
+        if use_liberation:
+            self.click_liberation(send_click=True, wait_if_cd_ready=0.4)
+            self.send_resonance_key(after_sleep=0.05)
+            self.record_resonance_use()
+        return True
+
     def wind_routine_click_while_flying(self, duration, interval=0.1):
         start = time.time()
         while time.time() - start < duration:

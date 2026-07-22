@@ -1109,3 +1109,9 @@ msgstr "방랑자"
 
 msgid "Yangyang: Xuanling"
 msgstr "양양·현령"
+
+msgid "Use Team Rotation"
+msgstr "팀 로테이션 사용"
+
+msgid "Use a fixed rotation when the current team is supported"
+msgstr "현재 팀이 지원되는 경우 고정 로테이션을 사용합니다"

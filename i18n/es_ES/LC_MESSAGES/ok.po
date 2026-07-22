@@ -1033,3 +1033,9 @@ msgstr "Rover: Aero"
 
 msgid "Yangyang: Xuanling"
 msgstr "Yangyang: Xuanling"
+
+msgid "Use Team Rotation"
+msgstr "Usar rotación de equipo"
+
+msgid "Use a fixed rotation when the current team is supported"
+msgstr "Usa una rotación fija cuando el equipo actual sea compatible"

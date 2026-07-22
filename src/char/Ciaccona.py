@@ -158,6 +158,54 @@ class Ciaccona(BaseChar):
         self.logger.info(f'Frequncy analysis with forte {forte}')
         return forte
 
+    def perform_team_plunge_forte(self, use_resonance=False, build_time=1.6):
+        """下落攻击接普攻，检测到三格回路后可立即确认 E 并交棒。"""
+        self.click_jump_with_click(0.4)
+        self.task.wait_until(lambda: not self.flying(), post_action=self.click_with_interval, time_out=1.2)
+
+        start = time.time()
+        while self.judge_forte() < 3 and time.time() - start < build_time:
+            self.click(interval=0.08)
+            self.task.next_frame()
+
+        if use_resonance:
+            ready = self.task.wait_until(self.resonance_available, time_out=0.5, raise_if_not_found=False)
+            if not ready:
+                self.logger.warning('ciaccona team plunge could not confirm resonance availability')
+                return False
+            self.send_resonance_key(after_sleep=0.05)
+            self.record_resonance_use()
+        return True
+
+    def perform_team_forte_echo_liberation(self):
+        """切回夏空后重击消耗三格回路，在重击期间释放声骸并接大招。"""
+        start = time.time()
+        while not self.is_mouse_forte_full() and time.time() - start < 0.8:
+            self.click(interval=0.08)
+            self.task.next_frame()
+
+        echo_used = False
+        if self.is_mouse_forte_full():
+            self.task.mouse_down()
+            start = time.time()
+            while self.is_mouse_forte_full() and time.time() - start < 2:
+                if not echo_used and self.echo_available():
+                    echo_used = self.click_echo(time_out=0)
+                self.task.next_frame()
+            self.task.mouse_up()
+            self.sleep(0.05)
+        else:
+            self.heavy_attack()
+        if not echo_used:
+            self.click_echo(time_out=0)
+
+        liberated = self.click_liberation(wait_if_cd_ready=0.6)
+        if liberated:
+            self.in_liberation = True
+            if self.is_con_full():
+                self.outrotime = time.time()
+        return liberated
+
     def switch_next_char(self, *args, **kwargs):
         if self.is_con_full():
             self.outrotime = time.time()

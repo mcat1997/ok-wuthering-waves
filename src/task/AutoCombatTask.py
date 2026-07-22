@@ -5,6 +5,7 @@ from qfluentwidgets import FluentIcon
 from ok import TriggerTask, Logger
 from src.char.CharFactory import char_names
 from src.scene.WWScene import WWScene
+from src.team import select_team_rotation
 from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
 
 logger = Logger.get_logger(__name__)
@@ -24,11 +25,13 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             'Auto Target': True,
             'Use Liberation': True,
             'Check Levitator': True,
+            'Use Team Rotation': True,
         })
         self.config_description = {
             'Auto Target': 'Turn off to enable auto combat only when manually target enemy using middle click',
             'Use Liberation': 'Do not use Liberation in Open World to Save Time',
             'Check Levitator': 'Toggle the levitator and verify if the character is floating',
+            'Use Team Rotation': 'Use a fixed rotation when the current team is supported',
         }
         self.op_index = 0
         self.char_features_warmed_up = False
@@ -57,6 +60,9 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         while self.in_combat():
             ret = True
             try:
+                rotation = select_team_rotation(self)
+                if rotation and rotation.perform():
+                    continue
                 self.get_current_char().perform()
             except CharDeadException:
                 self.log_error(f'Characters dead', notify=True)
